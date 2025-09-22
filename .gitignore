@@ -23,3 +23,8 @@ logs/
 # Директория сборки
 bin/
 dist/
+
+# 
+!cmd/
+!cmd/vetbot/
+!cmd/vetbot/main.go
