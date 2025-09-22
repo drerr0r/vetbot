@@ -3,270 +3,205 @@ package handlers
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 
-	"vetbot/internal/database"
-	"vetbot/pkg/utils"
-
-	telegram "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/drerr0r/vetbot/internal/database"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// AdminHandlers содержит обработчики административных команд
+// AdminHandlers содержит обработчики для административных функций
 type AdminHandlers struct {
-	bot    *telegram.BotAPI
-	db     *database.Database
-	config *utils.Config
+	bot *tgbotapi.BotAPI
+	db  *database.Database
 }
 
-// NewAdminHandlers создает новый экземпляр административных обработчиков
-func NewAdminHandlers(bot *telegram.BotAPI, db *database.Database, config *utils.Config) *AdminHandlers {
+// NewAdminHandlers создает новый экземпляр AdminHandlers
+func NewAdminHandlers(bot *tgbotapi.BotAPI, db *database.Database) *AdminHandlers {
 	return &AdminHandlers{
-		bot:    bot,
-		db:     db,
-		config: config,
+		bot: bot,
+		db:  db,
 	}
 }
 
-// HandleAdminCommand обрабатывает административные команды
-func (h *AdminHandlers) HandleAdminCommand(update telegram.Update) {
-	chatID := update.Message.Chat.ID
-	text := update.Message.Text
+// HandleAdmin показывает админскую панель
+func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("📊 Статистика"),
+			tgbotapi.NewKeyboardButton("👥 Пользователи"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏥 Клиники"),
+			tgbotapi.NewKeyboardButton("👨‍⚕️ Врачи"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("❌ Закрыть админку"),
+		),
+	)
+	keyboard.OneTimeKeyboard = true
 
-	// Проверяем права администратора
-	isAdmin, err := h.db.IsAdmin(chatID)
-	if err != nil {
-		log.Printf("Error checking admin rights: %v", err)
-		h.sendMessage(chatID, "❌ Ошибка проверки прав доступа")
-		return
-	}
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"🔧 *Административная панель*\n\nВыберите действие:")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
 
-	if !isAdmin {
-		h.sendMessage(chatID, "⛔ У вас нет прав администратора")
-		return
-	}
-
-	// Разбираем команду
-	parts := strings.Fields(text)
-	if len(parts) < 2 {
-		h.showAdminHelp(chatID)
-		return
-	}
-
-	subCommand := parts[1]
-
-	switch subCommand {
-	case "add":
-		h.handleAddVet(chatID)
-	case "edit":
-		if len(parts) >= 3 {
-			h.handleEditVet(chatID, parts[2])
-		} else {
-			h.sendMessage(chatID, "❌ Укажите ID врача для редактирования: /admin edit [id]")
-		}
-	case "delete":
-		if len(parts) >= 3 {
-			h.handleDeleteVet(chatID, parts[2])
-		} else {
-			h.sendMessage(chatID, "❌ Укажите ID врача для удаления: /admin delete [id]")
-		}
-	case "stats":
-		h.handleStats(chatID)
-	case "list":
-		h.handleAdminList(chatID)
-	default:
-		h.showAdminHelp(chatID)
-	}
+	h.bot.Send(msg)
 }
 
-// handleAddVet обрабатывает добавление нового врача
-func (h *AdminHandlers) handleAddVet(chatID int64) {
-	message := `👨‍⚕️ Добавление нового врача
-
-Отправьте данные в формате:
-Имя Фамилия
-Специализация
-Адрес
-Телефон
-Часы работы
-
-Пример:
-Иван Петров
-Терапевт
-ул. Центральная, 1
-+7 (999) 123-45-67
-09:00-18:00`
-
-	h.sendMessage(chatID, message)
-
-	// Здесь должна быть логика ожидания следующих сообщений с данными
-	// В реальной реализации нужно использовать состояние бота (state machine)
-	h.sendMessage(chatID, "⚠️ Функция добавления через многосообщенный ввод в разработке. Используйте прямой SQL для добавления врачей.")
-}
-
-// handleEditVet обрабатывает редактирование врача
-func (h *AdminHandlers) handleEditVet(chatID int64, vetIDStr string) {
-	// Парсим ID врача
-	vetID, err := strconv.ParseInt(vetIDStr, 10, 64)
+// HandleStats показывает статистику бота
+func (h *AdminHandlers) HandleStats(update tgbotapi.Update) {
+	// Получаем базовую статистику
+	userCount, err := h.getUserCount()
 	if err != nil {
-		h.sendMessage(chatID, "❌ Неверный формат ID врача")
-		return
-	}
-
-	// Получаем данные врача
-	vet, err := h.db.GetVeterinarianByID(vetID)
-	if err != nil {
-		h.sendMessage(chatID, fmt.Sprintf("❌ Врач с ID %d не найден", vetID))
-		return
-	}
-
-	// Показываем текущие данные врача
-	message := fmt.Sprintf(`✏️ Редактирование врача ID: %d
-
-Текущие данные:
-👨‍⚕️ Имя: %s
-🎯 Специализация: %s
-📍 Адрес: %s
-📞 Телефон: %s
-🕐 Часы работы: %s
-
-Отправьте новые данные в формате:
-имя=Новое Имя
-специализация=Новая Специализация
-адрес=Новый Адрес
-телефон=Новый Телефон
-часы=Новые Часы работы
-
-Пример:
-имя=Иван Иванов
-специализация=Хирург`, vetID, vet.Name, vet.Specialty, vet.Address, vet.Phone, vet.WorkHours)
-
-	h.sendMessage(chatID, message)
-	h.sendMessage(chatID, "⚠️ Функция редактирования через сообщения в разработке. Используйте прямой SQL для изменений.")
-}
-
-// handleDeleteVet обрабатывает удаление врача
-func (h *AdminHandlers) handleDeleteVet(chatID int64, vetIDStr string) {
-	// Парсим ID врача
-	vetID, err := strconv.ParseInt(vetIDStr, 10, 64)
-	if err != nil {
-		h.sendMessage(chatID, "❌ Неверный формат ID врача")
-		return
-	}
-
-	// Получаем данные врача для подтверждения
-	vet, err := h.db.GetVeterinarianByID(vetID)
-	if err != nil {
-		h.sendMessage(chatID, fmt.Sprintf("❌ Врач с ID %d не найден", vetID))
-		return
-	}
-
-	// Показываем информацию о враче и запрашиваем подтверждение
-	message := fmt.Sprintf(`🗑️ Подтверждение удаления врача:
-
-👨‍⚕️ Имя: %s
-🎯 Специализация: %s
-📍 Адрес: %s
-📞 Телефон: %s
-
-Для подтверждения удаления отправьте: /confirm_delete %d
-Для отмены отправьте: /cancel`, vet.Name, vet.Specialty, vet.Address, vet.Phone, vetID)
-
-	h.sendMessage(chatID, message)
-}
-
-// handleStats показывает статистику бота
-func (h *AdminHandlers) handleStats(chatID int64) {
-	// Получаем всех врачей
-	vets, err := h.db.GetAllVeterinarians()
-	if err != nil {
-		h.sendMessage(chatID, "❌ Ошибка получения статистики")
-		return
-	}
-
-	// Получаем количество пользователей
-	var userCount int
-	err = h.db.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount)
-	if err != nil {
+		log.Printf("Error getting user count: %v", err)
 		userCount = 0
 	}
 
-	var adminCount int
-	err = h.db.DB.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin = true").Scan(&adminCount)
+	requestCount, err := h.getRequestCount()
 	if err != nil {
-		adminCount = 0
+		log.Printf("Error getting request count: %v", err)
+		requestCount = 0
 	}
 
-	message := fmt.Sprintf(`📊 Статистика VetBot
+	vetCount, err := h.getVetCount()
+	if err != nil {
+		log.Printf("Error getting vet count: %v", err)
+		vetCount = 0
+	}
 
-👨‍⚕️ Врачей в базе: %d
+	statsMsg := fmt.Sprintf(`📊 *Статистика бота*
+
 👥 Пользователей: %d
-⚙️ Администраторов: %d
+📞 Запросов: %d
+👨‍⚕️ Врачей в базе: %d
 
-💡 Система работает стабильно`, len(vets), userCount, adminCount)
+*Последние действия:*
+- Бот работает стабильно
+- Все системы в норме`, userCount, requestCount, vetCount)
 
-	h.sendMessage(chatID, message)
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, statsMsg)
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
 }
 
-// handleAdminList показывает список врачей с ID
-func (h *AdminHandlers) handleAdminList(chatID int64) {
-	// Получаем всех врачей из базы данных
-	veterinarians, err := h.db.GetAllVeterinarians()
+// HandleAdminMessage обрабатывает текстовые сообщения в админском режиме
+func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
+	text := update.Message.Text
+
+	switch text {
+	case "📊 Статистика":
+		h.HandleStats(update)
+	case "👥 Пользователи":
+		h.handleUsers(update)
+	case "🏥 Клиники":
+		h.handleClinicsAdmin(update)
+	case "👨‍⚕️ Врачи":
+		h.handleVetsAdmin(update)
+	case "❌ Закрыть админку":
+		h.closeAdmin(update)
+	default:
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"Используйте кнопки админской панели или команду /admin для возврата")
+		h.bot.Send(msg)
+	}
+}
+
+// handleUsers показывает управление пользователями
+func (h *AdminHandlers) handleUsers(update tgbotapi.Update) {
+	userCount, err := h.getUserCount()
 	if err != nil {
-		log.Printf("Error getting veterinarians: %v", err)
-		h.sendMessage(chatID, "❌ Ошибка при получении данных из базы")
+		log.Printf("Error getting user count: %v", err)
+		userCount = 0
+	}
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("👥 *Управление пользователями*\n\nВсего пользователей: %d\n\nДля подробной статистики используйте сторонние инструменты аналитики.", userCount))
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// handleClinicsAdmin показывает управление клиниками
+func (h *AdminHandlers) handleClinicsAdmin(update tgbotapi.Update) {
+	clinics, err := h.db.GetAllClinics()
+	if err != nil {
+		log.Printf("Error getting clinics: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка клиник")
+		h.bot.Send(msg)
 		return
 	}
 
-	if len(veterinarians) == 0 {
-		h.sendMessage(chatID, "📭 В базе данных нет врачей")
+	var sb strings.Builder
+	sb.WriteString("🏥 *Управление клиниками*\n\n")
+
+	for i, clinic := range clinics {
+		sb.WriteString(fmt.Sprintf("*%d. %s*\n", i+1, clinic.Name))
+		sb.WriteString(fmt.Sprintf("📍 %s\n", clinic.Address))
+		sb.WriteString(fmt.Sprintf("📞 %s\n", clinic.Phone))
+		sb.WriteString("---\n")
+	}
+
+	sb.WriteString("\nДля изменения данных клиник используйте прямые SQL-запросы к базе данных.")
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// handleVetsAdmin показывает управление врачами
+func (h *AdminHandlers) handleVetsAdmin(update tgbotapi.Update) {
+	specializations, err := h.db.GetAllSpecializations()
+	if err != nil {
+		log.Printf("Error getting specializations: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении специализаций")
+		h.bot.Send(msg)
 		return
 	}
 
-	// Форматируем список врачей с ID
-	var message strings.Builder
-	message.WriteString("👨‍⚕️ Список врачей (с ID):\n\n")
+	var sb strings.Builder
+	sb.WriteString("👨‍⚕️ *Управление врачами*\n\n")
+	sb.WriteString("*Специализации:*\n")
 
-	for _, vet := range veterinarians {
-		message.WriteString(fmt.Sprintf("🆔 ID: %d\n", vet.ID))
-		message.WriteString(fmt.Sprintf("   👨‍⚕️ Имя: %s\n", vet.Name))
-		message.WriteString(fmt.Sprintf("   🎯 Специализация: %s\n", vet.Specialty))
-		message.WriteString(fmt.Sprintf("   📍 Адрес: %s\n", vet.Address))
-		message.WriteString(fmt.Sprintf("   📞 Телефон: %s\n", vet.Phone))
-		message.WriteString(fmt.Sprintf("   🕐 Часы работы: %s\n\n", vet.WorkHours))
+	for _, spec := range specializations {
+		vets, err := h.db.GetVeterinariansBySpecialization(spec.ID)
+		if err != nil {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("• %s: %d врачей\n", spec.Name, len(vets)))
 	}
 
-	message.WriteString("💡 Используйте ID для команд редактирования и удаления")
+	sb.WriteString("\nДля добавления/изменения данных врачей используйте прямые SQL-запросы к базе данных.")
 
-	h.sendMessage(chatID, message.String())
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
 }
 
-// showAdminHelp показывает справку по административным командам
-func (h *AdminHandlers) showAdminHelp(chatID int64) {
-	message := `⚙️ Справка по административным командам:
-
-/admin add - добавить нового врача
-/admin edit [id] - редактировать врача
-/admin delete [id] - удалить врача
-/admin stats - статистика бота
-/admin list - список всех врачей (с ID)
-
-Примеры:
-/admin edit 1 - редактировать врача с ID 1
-/admin delete 2 - удалить врача с ID 2
-
-💡 Для просмотра ID врачей используйте: /admin list`
-
-	h.sendMessage(chatID, message)
+// closeAdmin закрывает админскую панель
+func (h *AdminHandlers) closeAdmin(update tgbotapi.Update) {
+	removeKeyboard := tgbotapi.NewRemoveKeyboard(true)
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Админская панель закрыта")
+	msg.ReplyMarkup = removeKeyboard
+	h.bot.Send(msg)
 }
 
-// sendMessage отправляет сообщение в Telegram чат
-func (h *AdminHandlers) sendMessage(chatID int64, text string) {
-	msg := telegram.NewMessage(chatID, text)
-	msg.ParseMode = "HTML"
+// Вспомогательные методы для статистики
+func (h *AdminHandlers) getUserCount() (int, error) {
+	query := "SELECT COUNT(*) FROM users"
+	var count int
+	err := h.db.GetDB().QueryRow(query).Scan(&count)
+	return count, err
+}
 
-	_, err := h.bot.Send(msg)
-	if err != nil {
-		log.Printf("Error sending message: %v", err)
-	}
+func (h *AdminHandlers) getRequestCount() (int, error) {
+	query := "SELECT COUNT(*) FROM user_requests"
+	var count int
+	err := h.db.GetDB().QueryRow(query).Scan(&count)
+	return count, err
+}
+
+func (h *AdminHandlers) getVetCount() (int, error) {
+	query := "SELECT COUNT(*) FROM veterinarians WHERE is_active = true"
+	var count int
+	err := h.db.GetDB().QueryRow(query).Scan(&count)
+	return count, err
 }

@@ -1,36 +1,49 @@
-# Используем официальный образ Go
 FROM golang:1.21-alpine AS builder
 
-# Устанавливаем рабочую директорию
+# Устанавливаем зависимости для сборки
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем файлы модулей и загружаем зависимости
+# Копируем файлы модулей
 COPY go.mod go.sum ./
+
+# Скачиваем зависимости
 RUN go mod download
 
 # Копируем исходный код
 COPY . .
 
 # Собираем приложение
-RUN go build -o vetbot ./cmd/vetbot
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o vetbot ./cmd/vetbot
 
 # Финальный образ
-FROM alpine:3.18
+FROM alpine:latest
 
-# Устанавливаем рабочую директорию
+# Устанавливаем зависимости для runtime
+RUN apk --no-cache add ca-certificates tzdata
+
+# Создаем пользователя app
+RUN addgroup -S app && adduser -S app -G app
+
+# Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем бинарник из builder stage
+# Копируем бинарник из builder
 COPY --from=builder /app/vetbot .
 COPY --from=builder /app/migrations ./migrations
 
-# Создаем пользователя для безопасности
-RUN adduser -D -g '' vetuser && \
-    chown -R vetuser:vetuser /app
+# Копируем статические файлы (если есть)
+COPY --from=builder /app/static ./static
 
-USER vetuser
+# Устанавливаем права
+RUN chown -R app:app /app
 
-# Экспортируем порт (если понадобится для health checks)
+# Переключаемся на пользователя app
+USER app
+
+# Экспортируем порт (если нужно)
 EXPOSE 8080
 
 # Команда запуска

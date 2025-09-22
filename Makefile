@@ -1,60 +1,72 @@
-.PHONY: install build test run clean migrate docker-up docker-down docker-logs
+# Variables
+BINARY_NAME=vetbot
+DOCKER_IMAGE=vetbot/app
+MIGRATIONS_DIR=./migrations
 
-# Установка зависимостей
-install:
-	@echo "📦 Установка зависимостей..."
-	go mod download
+.PHONY: help build run test clean migrate-up migrate-down docker-build docker-run
 
-# Сборка приложения
-build:
-	@echo "🔨 Сборка приложения..."
-	go build -o vetbot ./cmd/vetbot
+help: ## Show this help
+	@echo "Available commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-# Запуск тестов
-test:
-	@echo "🧪 Запуск тестов..."
-	go test -v ./...
+build: ## Build the application
+	@echo "Building $(BINARY_NAME)..."
+	go build -o $(BINARY_NAME) ./cmd/vetbot
 
-# Запуск приложения
-run: build
-	@echo "🚀 Запуск приложения..."
-	./vetbot
+run: ## Run the application
+	@echo "Running $(BINARY_NAME)..."
+	go run ./cmd/vetbot
 
-# Очистка
-clean:
-	@echo "🧹 Очистка..."
-	rm -f vetbot
+test: ## Run tests
+	@echo "Running tests..."
+	go test ./...
+
+clean: ## Clean build artifacts
+	@echo "Cleaning..."
+	rm -f $(BINARY_NAME)
 	go clean
 
-# Запуск миграций
-migrate:
-	@echo "🔄 Запуск миграций..."
-	go run cmd/vetbot/main.go -migrate
+migrate-up: ## Run database migrations
+	@echo "Running migrations..."
+	@for file in $(shell ls $(MIGRATIONS_DIR)/*.sql | sort); do \
+		echo "Applying $$(basename $$file)..."; \
+		psql $$DATABASE_URL -f $$file || exit 1; \
+	done
 
-# Запуск Docker Compose
-docker-up:
-	@echo "🐳 Запуск Docker Compose..."
+migrate-down: ## Rollback last migration
+	@echo "Rolling back last migration..."
+	@echo "Warning: This will drop all tables!"
+	psql $$DATABASE_URL -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+docker-build: ## Build Docker image
+	@echo "Building Docker image..."
+	docker build -t $(DOCKER_IMAGE) .
+
+docker-run: ## Run Docker container
+	@echo "Running Docker container..."
+	docker run --env-file .env -p 8080:8080 $(DOCKER_IMAGE)
+
+compose-up: ## Start with Docker Compose
+	@echo "Starting services with Docker Compose..."
 	docker-compose up -d
 
-# Остановка Docker Compose
-docker-down:
-	@echo "🛑 Остановка Docker Compose..."
+compose-down: ## Stop Docker Compose services
+	@echo "Stopping services..."
 	docker-compose down
 
-# Просмотр логов Docker
-docker-logs:
-	@echo "📊 Просмотр логов..."
-	docker-compose logs -f vetbot
+compose-logs: ## Show Docker Compose logs
+	docker-compose logs -f
 
-# Help
-help:
-	@echo "Доступные команды:"
-	@echo "  make install    - Установить зависимости"
-	@echo "  make build      - Собрать приложение"
-	@echo "  make test       - Запустить тесты"
-	@echo "  make run        - Запустить приложение"
-	@echo "  make clean      - Очистить проект"
-	@echo "  make migrate    - Запустить миграции"
-	@echo "  make docker-up  - Запустить Docker"
-	@echo "  make docker-down - Остановить Docker"
-	@echo "  make docker-logs - Просмотр логов Docker"
+dev: ## Start development environment
+	@echo "Starting development environment..."
+	docker-compose up -d postgres
+	@sleep 5
+	@echo "Database is ready, now run: make run"
+
+lint: ## Run linter
+	@echo "Running linter..."
+	golangci-lint run
+
+fmt: ## Format code
+	@echo "Formatting code..."
+	go fmt ./...

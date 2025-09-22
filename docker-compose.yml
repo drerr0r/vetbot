@@ -1,37 +1,64 @@
 version: '3.8'
 
 services:
-  vetbot:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=vetbot_user
-      - DB_PASSWORD=secure_password_123
-      - DB_NAME=vetbot_db
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_USERNAME=drerr0r
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
-
+  # PostgreSQL database
   postgres:
     image: postgres:15-alpine
+    container_name: vetbot_db
     environment:
-      POSTGRES_DB: vetbot_db
+      POSTGRES_DB: vetbot
       POSTGRES_USER: vetbot_user
-      POSTGRES_PASSWORD: secure_password_123
+      POSTGRES_PASSWORD: vetbot_password
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - vetbot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vetbot_user -d vetbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # VetBot application
+  vetbot:
+    build: .
+    container_name: vetbot_app
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgres://vetbot_user:vetbot_password@postgres:5432/vetbot?sslmode=disable
+      DEBUG: ${DEBUG:-false}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - vetbot_network
+    restart: unless-stopped
+
+  # PGAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: vetbot_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@vetbot.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - vetbot_network
     restart: unless-stopped
 
 volumes:
   postgres_data:
+
+networks:
+  vetbot_network:
+    driver: bridge

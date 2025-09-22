@@ -1,32 +1,50 @@
 #!/bin/bash
 
-# Скрипт деплоя VetBot
-
+# VetBot Deployment Script
 set -e
 
-echo "🚀 Деплой VetBot"
+ENV=${1:-production}
+DOCKER_IMAGE="vetbot/app:latest"
 
-# Проверка переменных окружения
-if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-    echo "❌ TELEGRAM_BOT_TOKEN не установлен"
+echo "🚀 Deploying VetBot ($ENV environment)..."
+
+# Validate environment
+if [[ ! "$ENV" =~ ^(development|staging|production)$ ]]; then
+    echo "❌ Invalid environment: $ENV"
+    echo "Usage: $0 [development|staging|production]"
     exit 1
 fi
 
-# Остановка текущих контейнеров
-echo "🛑 Остановка текущих контейнеров"
-docker-compose down
+echo "📦 Building Docker image..."
+docker build -t $DOCKER_IMAGE .
 
-# Обновление кода
-echo "📥 Обновление кода"
-git pull origin main
+# Stop existing container
+echo "🛑 Stopping existing container..."
+docker-compose down || true
 
-# Пересборка образов
-echo "🔨 Пересборка образов Docker"
-docker-compose build
+# Update images
+echo "🔄 Pulling latest images..."
+docker-compose pull
 
-# Запуск контейнеров
-echo "🚀 Запуск контейнеров"
+# Start services
+echo "🚀 Starting services..."
 docker-compose up -d
 
-echo "✅ Деплой завершен!"
-echo "📊 Проверьте логи: docker-compose logs -f vetbot"
+# Health check
+echo "🏥 Performing health check..."
+sleep 10
+
+# Check if application is running
+if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+    echo "✅ Deployment successful!"
+else
+    echo "❌ Deployment failed - application not responding"
+    docker-compose logs vetbot
+    exit 1
+fi
+
+# Clean up old images
+echo "🧹 Cleaning up old images..."
+docker image prune -f
+
+echo "🎉 VetBot deployed successfully to $ENV environment!"
