@@ -1,0 +1,25 @@
+# Файлы окружения
+.env
+.env.local
+
+# Бинарные файлы
+vetbot
+*.exe
+*.so
+*.dll
+
+# Логи
+*.log
+logs/
+
+# Базы данных
+*.db
+*.sqlite3
+
+# Директории IDE
+.vscode/
+.idea/
+
+# Директория сборки
+bin/
+dist/
