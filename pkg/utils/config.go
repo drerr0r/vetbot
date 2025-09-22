@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config содержит все конфигурационные параметры приложения
@@ -23,26 +24,53 @@ func LoadConfig() (*Config, error) {
 	if config.TelegramToken == "" {
 		log.Fatal("TELEGRAM_TOKEN is required")
 	}
+	log.Printf("Telegram token loaded: %s...", config.TelegramToken[:10])
 
 	// URL базы данных (обязательный параметр)
 	config.DatabaseURL = getEnv("DATABASE_URL", "")
 	if config.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
+	log.Printf("Database URL loaded: %s", config.DatabaseURL)
 
 	// Режим отладки (опционально)
 	debugStr := getEnv("DEBUG", "false")
 	config.Debug, _ = strconv.ParseBool(debugStr)
+	log.Printf("Debug mode: %t", config.Debug)
 
 	// ID администраторов (опционально)
 	adminIDsStr := getEnv("ADMIN_IDS", "")
+	log.Printf("Raw ADMIN_IDS from env: '%s'", adminIDsStr)
+
 	if adminIDsStr != "" {
-		// Парсим список ID администраторов (формат: "123,456,789")
-		// В реальном приложении нужно добавить парсинг
-		config.AdminIDs = []int64{123456789} // Заглушка
+		config.AdminIDs = parseAdminIDs(adminIDsStr)
+		log.Printf("Loaded admin IDs: %v", config.AdminIDs)
+	} else {
+		log.Printf("No admin IDs configured")
 	}
 
 	return config, nil
+}
+
+// parseAdminIDs парсит строку с ID администраторов
+func parseAdminIDs(adminIDsStr string) []int64 {
+	var adminIDs []int64
+	ids := strings.Split(adminIDsStr, ",")
+
+	for _, idStr := range ids {
+		idStr = strings.TrimSpace(idStr)
+		if idStr == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			log.Printf("Error parsing admin ID %s: %v", idStr, err)
+			continue
+		}
+		adminIDs = append(adminIDs, id)
+	}
+
+	return adminIDs
 }
 
 // getEnv получает значение переменной окружения или возвращает значение по умолчанию

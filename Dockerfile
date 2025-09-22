@@ -34,17 +34,14 @@ WORKDIR /app
 COPY --from=builder /app/vetbot .
 COPY --from=builder /app/migrations ./migrations
 
-# Копируем статические файлы (если есть)
-COPY --from=builder /app/static ./static
+# Создаем пустую папку static если нужно (для будущего использования)
+RUN mkdir -p static
 
 # Устанавливаем права
 RUN chown -R app:app /app
 
 # Переключаемся на пользователя app
 USER app
-
-# Экспортируем порт (если нужно)
-EXPOSE 8080
 
 # Команда запуска
 CMD ["./vetbot"]

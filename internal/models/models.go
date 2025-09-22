@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"time"
 )
 
@@ -25,26 +26,26 @@ type Specialization struct {
 
 // Veterinarian представляет ветеринарного врача
 type Veterinarian struct {
-	ID              int              `json:"id"`
-	FirstName       string           `json:"first_name"`
-	LastName        string           `json:"last_name"`
-	Phone           string           `json:"phone"`
-	Email           string           `json:"email"`
-	Description     string           `json:"description"`
-	ExperienceYears int              `json:"experience_years"`
-	IsActive        bool             `json:"is_active"`
-	Specializations []Specialization `json:"specializations"`
-	CreatedAt       time.Time        `json:"created_at"`
+	ID              int               `json:"id"`
+	FirstName       string            `json:"first_name"`
+	LastName        string            `json:"last_name"`
+	Phone           string            `json:"phone"`
+	Email           sql.NullString    `json:"email"`            // Может быть NULL
+	Description     sql.NullString    `json:"description"`      // Может быть NULL
+	ExperienceYears sql.NullInt64     `json:"experience_years"` // Может быть NULL
+	IsActive        bool              `json:"is_active"`
+	Specializations []*Specialization `json:"specializations"` // Исправлено на указатели
+	CreatedAt       time.Time         `json:"created_at"`
 }
 
 // Clinic представляет клинику/место приема
 type Clinic struct {
-	ID           int       `json:"id"`
-	Name         string    `json:"name"`
-	Address      string    `json:"address"`
-	Phone        string    `json:"phone"`
-	WorkingHours string    `json:"working_hours"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           int            `json:"id"`
+	Name         string         `json:"name"`
+	Address      string         `json:"address"`
+	Phone        sql.NullString `json:"phone"`         // Может быть NULL
+	WorkingHours sql.NullString `json:"working_hours"` // Может быть NULL
+	CreatedAt    time.Time      `json:"created_at"`
 }
 
 // Schedule представляет расписание врача

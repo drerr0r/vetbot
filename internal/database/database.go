@@ -87,22 +87,30 @@ func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
 
 // Specialization methods
 func (d *Database) GetAllSpecializations() ([]*models.Specialization, error) {
+	log.Printf("Getting all specializations from database")
+
 	query := `SELECT id, name, description, created_at FROM specializations ORDER BY name`
 	rows, err := d.db.Query(query)
 	if err != nil {
+		log.Printf("Error executing query: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
 
 	var specializations []*models.Specialization
+	count := 0
 	for rows.Next() {
 		spec := &models.Specialization{}
 		err := rows.Scan(&spec.ID, &spec.Name, &spec.Description, &spec.CreatedAt)
 		if err != nil {
+			log.Printf("Error scanning row: %v", err)
 			return nil, err
 		}
 		specializations = append(specializations, spec)
+		count++
 	}
+
+	log.Printf("Successfully retrieved %d specializations", count)
 	return specializations, nil
 }
 
@@ -140,14 +148,56 @@ func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*mo
 	var vets []*models.Veterinarian
 	for rows.Next() {
 		vet := &models.Veterinarian{}
-		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+		err := rows.Scan(
+			&vet.ID,
+			&vet.FirstName,
+			&vet.LastName,
+			&vet.Phone,
+			&vet.Email,
+			&vet.Description,
+			&vet.ExperienceYears,
+			&vet.IsActive,
+			&vet.CreatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}
+
+		// Загружаем специализации для врача
+		specs, err := d.GetSpecializationsByVetID(vet.ID)
+		if err == nil {
+			vet.Specializations = specs
+		}
+
 		vets = append(vets, vet)
 	}
 	return vets, nil
+}
+
+// Новый метод для получения специализаций врача
+func (d *Database) GetSpecializationsByVetID(vetID int) ([]*models.Specialization, error) {
+	query := `
+		SELECT s.id, s.name, s.description, s.created_at
+		FROM specializations s
+		JOIN vet_specializations vs ON s.id = vs.specialization_id
+		WHERE vs.vet_id = $1`
+
+	rows, err := d.db.Query(query, vetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var specializations []*models.Specialization
+	for rows.Next() {
+		spec := &models.Specialization{}
+		err := rows.Scan(&spec.ID, &spec.Name, &spec.Description, &spec.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		specializations = append(specializations, spec)
+	}
+	return specializations, nil
 }
 
 func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
@@ -158,8 +208,17 @@ func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
 
 	row := d.db.QueryRow(query, id)
 	vet := &models.Veterinarian{}
-	err := row.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-		&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+	err := row.Scan(
+		&vet.ID,
+		&vet.FirstName,
+		&vet.LastName,
+		&vet.Phone,
+		&vet.Email,
+		&vet.Description,
+		&vet.ExperienceYears,
+		&vet.IsActive,
+		&vet.CreatedAt,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -172,13 +231,15 @@ func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
 // Schedule methods
 func (d *Database) GetSchedulesByVetID(vetID int) ([]*models.Schedule, error) {
 	query := `
-		SELECT s.id, s.vet_id, s.clinic_id, s.day_of_week, s.start_time, 
-		       s.end_time, s.is_available, s.created_at,
-		       c.name as clinic_name, c.address, c.phone, c.working_hours
-		FROM schedules s
-		JOIN clinics c ON s.clinic_id = c.id
-		WHERE s.vet_id = $1 AND s.is_available = true
-		ORDER BY s.day_of_week, s.start_time`
+        SELECT s.id, s.vet_id, s.clinic_id, s.day_of_week, 
+               TO_CHAR(s.start_time, 'HH24:MI') as start_time,
+               TO_CHAR(s.end_time, 'HH24:MI') as end_time,
+               s.is_available, s.created_at,
+               c.name as clinic_name, c.address, c.phone, c.working_hours
+        FROM schedules s
+        JOIN clinics c ON s.clinic_id = c.id
+        WHERE s.vet_id = $1 AND s.is_available = true
+        ORDER BY s.day_of_week, s.start_time`
 
 	rows, err := d.db.Query(query, vetID)
 	if err != nil {
@@ -191,9 +252,20 @@ func (d *Database) GetSchedulesByVetID(vetID int) ([]*models.Schedule, error) {
 		schedule := &models.Schedule{
 			Clinic: &models.Clinic{},
 		}
-		err := rows.Scan(&schedule.ID, &schedule.VetID, &schedule.ClinicID, &schedule.DayOfWeek,
-			&schedule.StartTime, &schedule.EndTime, &schedule.IsAvailable, &schedule.CreatedAt,
-			&schedule.Clinic.Name, &schedule.Clinic.Address, &schedule.Clinic.Phone, &schedule.Clinic.WorkingHours)
+		err := rows.Scan(
+			&schedule.ID,
+			&schedule.VetID,
+			&schedule.ClinicID,
+			&schedule.DayOfWeek,
+			&schedule.StartTime,
+			&schedule.EndTime,
+			&schedule.IsAvailable,
+			&schedule.CreatedAt,
+			&schedule.Clinic.Name,
+			&schedule.Clinic.Address,
+			&schedule.Clinic.Phone,
+			&schedule.Clinic.WorkingHours,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -226,8 +298,16 @@ func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models
 	var vets []*models.Veterinarian
 	for rows.Next() {
 		vet := &models.Veterinarian{}
-		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-			&vet.Description, &vet.ExperienceYears, &vet.CreatedAt)
+		err := rows.Scan(
+			&vet.ID,
+			&vet.FirstName,
+			&vet.LastName,
+			&vet.Phone,
+			&vet.Email,
+			&vet.Description,
+			&vet.ExperienceYears,
+			&vet.CreatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -248,8 +328,14 @@ func (d *Database) GetAllClinics() ([]*models.Clinic, error) {
 	var clinics []*models.Clinic
 	for rows.Next() {
 		clinic := &models.Clinic{}
-		err := rows.Scan(&clinic.ID, &clinic.Name, &clinic.Address, &clinic.Phone,
-			&clinic.WorkingHours, &clinic.CreatedAt)
+		err := rows.Scan(
+			&clinic.ID,
+			&clinic.Name,
+			&clinic.Address,
+			&clinic.Phone,
+			&clinic.WorkingHours,
+			&clinic.CreatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}

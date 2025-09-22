@@ -27,6 +27,7 @@ func main() {
 
 	bot.Debug = config.Debug
 	log.Printf("Authorized on account %s", bot.Self.UserName)
+	log.Printf("Admin IDs: %v", config.AdminIDs)
 
 	// Инициализируем базу данных
 	db, err := database.NewDatabase(config.DatabaseURL)
@@ -36,7 +37,7 @@ func main() {
 	defer db.Close()
 
 	// Создаем основной обработчик
-	mainHandler := handlers.NewMainHandler(bot, db)
+	mainHandler := handlers.NewMainHandler(bot, db, config)
 
 	// Настраиваем вебхук или long polling
 	u := tgbotapi.NewUpdate(0)
