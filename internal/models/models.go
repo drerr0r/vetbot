@@ -1,71 +1,79 @@
 package models
 
 import (
-	"database/sql"
 	"time"
 )
 
-// Veterinarian представляет модель ветеринарного врача в системе
-type Veterinarian struct {
-	ID        int64     `json:"id"`         // Уникальный идентификатор врача
-	Name      string    `json:"name"`       // ФИО врача
-	Specialty string    `json:"specialty"`  // Специализация (терапевт, хирург и т.д.)
-	Address   string    `json:"address"`    // Адрес приема
-	Phone     string    `json:"phone"`      // Контактный телефон
-	WorkHours string    `json:"work_hours"` // График работы
-	CreatedAt time.Time `json:"created_at"` // Время создания записи
-	UpdatedAt time.Time `json:"updated_at"` // Время последнего обновления
-}
-
-// User представляет модель пользователя Telegram бота
+// User представляет пользователя бота
 type User struct {
-	ID       int64  `json:"id"`       // Уникальный идентификатор пользователя
-	Username string `json:"username"` // Имя пользователя в Telegram
-	ChatID   int64  `json:"chat_id"`  // ID чата с пользователем
-	IsAdmin  bool   `json:"is_admin"` // Флаг администратора
+	ID         int       `json:"id"`
+	TelegramID int64     `json:"telegram_id"`
+	Username   string    `json:"username"`
+	FirstName  string    `json:"first_name"`
+	LastName   string    `json:"last_name"`
+	Phone      string    `json:"phone"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
-// CreateVeterinarianRequest структура для создания нового врача
-type CreateVeterinarianRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Specialty string `json:"specialty" binding:"required"`
-	Address   string `json:"address" binding:"required"`
-	Phone     string `json:"phone" binding:"required"`
-	WorkHours string `json:"work_hours"`
+// Specialization представляет специализацию врача
+type Specialization struct {
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
-// UpdateVeterinarianRequest структура для обновления данных врача
-type UpdateVeterinarianRequest struct {
-	Name      string `json:"name"`
-	Specialty string `json:"specialty"`
-	Address   string `json:"address"`
-	Phone     string `json:"phone"`
-	WorkHours string `json:"work_hours"`
+// Veterinarian представляет ветеринарного врача
+type Veterinarian struct {
+	ID              int              `json:"id"`
+	FirstName       string           `json:"first_name"`
+	LastName        string           `json:"last_name"`
+	Phone           string           `json:"phone"`
+	Email           string           `json:"email"`
+	Description     string           `json:"description"`
+	ExperienceYears int              `json:"experience_years"`
+	IsActive        bool             `json:"is_active"`
+	Specializations []Specialization `json:"specializations"`
+	CreatedAt       time.Time        `json:"created_at"`
 }
 
-// ToVeterinarian преобразует CreateVeterinarianRequest в Veterinarian
-func (r *CreateVeterinarianRequest) ToVeterinarian() *Veterinarian {
-	return &Veterinarian{
-		Name:      r.Name,
-		Specialty: r.Specialty,
-		Address:   r.Address,
-		Phone:     r.Phone,
-		WorkHours: r.WorkHours,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+// Clinic представляет клинику/место приема
+type Clinic struct {
+	ID           int       `json:"id"`
+	Name         string    `json:"name"`
+	Address      string    `json:"address"`
+	Phone        string    `json:"phone"`
+	WorkingHours string    `json:"working_hours"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Scan считывает данные врача из SQL строки
-func (v *Veterinarian) Scan(rows *sql.Rows) error {
-	return rows.Scan(
-		&v.ID,
-		&v.Name,
-		&v.Specialty,
-		&v.Address,
-		&v.Phone,
-		&v.WorkHours,
-		&v.CreatedAt,
-		&v.UpdatedAt,
-	)
+// Schedule представляет расписание врача
+type Schedule struct {
+	ID          int           `json:"id"`
+	VetID       int           `json:"vet_id"`
+	ClinicID    int           `json:"clinic_id"`
+	DayOfWeek   int           `json:"day_of_week"`
+	StartTime   string        `json:"start_time"`
+	EndTime     string        `json:"end_time"`
+	IsAvailable bool          `json:"is_available"`
+	Vet         *Veterinarian `json:"vet,omitempty"`
+	Clinic      *Clinic       `json:"clinic,omitempty"`
+	CreatedAt   time.Time     `json:"created_at"`
+}
+
+// UserRequest представляет запрос пользователя
+type UserRequest struct {
+	ID               int       `json:"id"`
+	UserID           int       `json:"user_id"`
+	SpecializationID int       `json:"specialization_id"`
+	SearchQuery      string    `json:"search_query"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// SearchCriteria представляет критерии поиска врачей
+type SearchCriteria struct {
+	SpecializationID int    `json:"specialization_id"`
+	DayOfWeek        int    `json:"day_of_week"`
+	Time             string `json:"time"`
+	ClinicID         int    `json:"clinic_id"`
 }

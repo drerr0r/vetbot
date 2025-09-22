@@ -4,299 +4,265 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
+	"time"
 
-	"vetbot/internal/models"
-	"vetbot/pkg/utils"
-
-	_ "github.com/lib/pq" // Драйвер PostgreSQL
+	"github.com/drerr0r/vetbot/internal/models"
+	_ "github.com/lib/pq"
 )
 
-// Database представляет обертку для работы с базой данных
+// Database обертка вокруг sql.DB с методами для работы с данными
 type Database struct {
-	DB *sql.DB
+	db *sql.DB
 }
 
-// InitDB инициализирует подключение к базе данных PostgreSQL
-func InitDB(config *utils.Config) (*Database, error) {
-	// Получаем строку подключения из конфигурации
-	connStr := config.GetDBConnectionString()
-
-	// Открываем соединение с базой данных
-	db, err := sql.Open("postgres", connStr)
+// NewDatabase создает новый экземпляр Database
+func NewDatabase(dataSourceName string) (*Database, error) {
+	sqlDB, err := sql.Open("postgres", dataSourceName)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка подключения к базе данных: %v", err)
+		return nil, fmt.Errorf("error opening database: %w", err)
 	}
+
+	// Устанавливаем настройки пула соединений
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(25)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	// Проверяем соединение
-	err = db.Ping()
-	if err != nil {
-		return nil, fmt.Errorf("ошибка ping базы данных: %v", err)
+	if err := sqlDB.Ping(); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 
-	log.Println("✅ Успешное подключение к PostgreSQL")
-
-	return &Database{DB: db}, nil
+	log.Println("Database connection established")
+	return &Database{db: sqlDB}, nil
 }
 
 // Close закрывает соединение с базой данных
 func (d *Database) Close() error {
-	if d.DB != nil {
-		return d.DB.Close()
+	if d.db != nil {
+		if err := d.db.Close(); err != nil {
+			log.Printf("Error closing database connection: %v", err)
+			return err
+		}
+		log.Println("Database connection closed")
 	}
 	return nil
 }
 
-// RunMigrations выполняет миграции базы данных
-func (d *Database) RunMigrations() error {
-	// Читаем файл миграций
-	migrationSQL, err := os.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return fmt.Errorf("ошибка чтения файла миграций: %v", err)
-	}
-
-	// Выполняем SQL миграций
-	_, err = d.DB.Exec(string(migrationSQL))
-	if err != nil {
-		return fmt.Errorf("ошибка выполнения миграций: %v", err)
-	}
-
-	log.Println("✅ Миграции базы данных успешно выполнены")
-	return nil
+// GetDB возвращает внутренний *sql.DB для прямого доступа
+func (d *Database) GetDB() *sql.DB {
+	return d.db
 }
 
-// CreateVeterinarian создает нового ветеринарного врача в базе данных
-func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
-	query := `
-		INSERT INTO veterinarians (name, specialty, address, phone, work_hours, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id
-	`
+// User methods
+func (d *Database) CreateUser(user *models.User) error {
+	query := `INSERT INTO users (telegram_id, username, first_name, last_name, phone) 
+	          VALUES ($1, $2, $3, $4, $5) 
+			  ON CONFLICT (telegram_id) DO UPDATE 
+			  SET username = EXCLUDED.username, first_name = EXCLUDED.first_name, 
+			      last_name = EXCLUDED.last_name, phone = EXCLUDED.phone
+			  RETURNING id, created_at`
 
-	err := d.DB.QueryRow(
-		query,
-		vet.Name,
-		vet.Specialty,
-		vet.Address,
-		vet.Phone,
-		vet.WorkHours,
-		vet.CreatedAt,
-		vet.UpdatedAt,
-	).Scan(&vet.ID)
-
-	if err != nil {
-		return fmt.Errorf("ошибка создания врача: %v", err)
-	}
-
-	return nil
+	err := d.db.QueryRow(query, user.TelegramID, user.Username, user.FirstName, user.LastName, user.Phone).
+		Scan(&user.ID, &user.CreatedAt)
+	return err
 }
 
-// GetVeterinarianByID возвращает врача по ID
-func (d *Database) GetVeterinarianByID(id int64) (*models.Veterinarian, error) {
-	query := `
-		SELECT id, name, specialty, address, phone, work_hours, created_at, updated_at
-		FROM veterinarians WHERE id = $1
-	`
+func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
+	query := `SELECT id, telegram_id, username, first_name, last_name, phone, created_at 
+	          FROM users WHERE telegram_id = $1`
+	row := d.db.QueryRow(query, telegramID)
 
-	row := d.DB.QueryRow(query, id)
-	vet := &models.Veterinarian{}
-
-	err := row.Scan(
-		&vet.ID,
-		&vet.Name,
-		&vet.Specialty,
-		&vet.Address,
-		&vet.Phone,
-		&vet.WorkHours,
-		&vet.CreatedAt,
-		&vet.UpdatedAt,
-	)
-
+	user := &models.User{}
+	err := row.Scan(&user.ID, &user.TelegramID, &user.Username, &user.FirstName,
+		&user.LastName, &user.Phone, &user.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("врач с ID %d не найден", id)
+			return nil, nil
 		}
-		return nil, fmt.Errorf("ошибка получения врача: %v", err)
+		return nil, err
 	}
+	return user, nil
+}
 
+// Specialization methods
+func (d *Database) GetAllSpecializations() ([]*models.Specialization, error) {
+	query := `SELECT id, name, description, created_at FROM specializations ORDER BY name`
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var specializations []*models.Specialization
+	for rows.Next() {
+		spec := &models.Specialization{}
+		err := rows.Scan(&spec.ID, &spec.Name, &spec.Description, &spec.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		specializations = append(specializations, spec)
+	}
+	return specializations, nil
+}
+
+func (d *Database) GetSpecializationByID(id int) (*models.Specialization, error) {
+	query := `SELECT id, name, description, created_at FROM specializations WHERE id = $1`
+	row := d.db.QueryRow(query, id)
+
+	spec := &models.Specialization{}
+	err := row.Scan(&spec.ID, &spec.Name, &spec.Description, &spec.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return spec, nil
+}
+
+// Veterinarian methods
+func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*models.Veterinarian, error) {
+	query := `
+		SELECT v.id, v.first_name, v.last_name, v.phone, v.email, 
+		       v.description, v.experience_years, v.is_active, v.created_at
+		FROM veterinarians v
+		JOIN vet_specializations vs ON v.id = vs.vet_id
+		WHERE vs.specialization_id = $1 AND v.is_active = true
+		ORDER BY v.experience_years DESC`
+
+	rows, err := d.db.Query(query, specializationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var vets []*models.Veterinarian
+	for rows.Next() {
+		vet := &models.Veterinarian{}
+		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		vets = append(vets, vet)
+	}
+	return vets, nil
+}
+
+func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
+	query := `
+		SELECT id, first_name, last_name, phone, email, description, 
+		       experience_years, is_active, created_at
+		FROM veterinarians WHERE id = $1`
+
+	row := d.db.QueryRow(query, id)
+	vet := &models.Veterinarian{}
+	err := row.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+		&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
 	return vet, nil
 }
 
-// GetAllVeterinarians возвращает всех ветеринарных врачей
-func (d *Database) GetAllVeterinarians() ([]models.Veterinarian, error) {
+// Schedule methods
+func (d *Database) GetSchedulesByVetID(vetID int) ([]*models.Schedule, error) {
 	query := `
-		SELECT id, name, specialty, address, phone, work_hours, created_at, updated_at
-		FROM veterinarians ORDER BY name
-	`
+		SELECT s.id, s.vet_id, s.clinic_id, s.day_of_week, s.start_time, 
+		       s.end_time, s.is_available, s.created_at,
+		       c.name as clinic_name, c.address, c.phone, c.working_hours
+		FROM schedules s
+		JOIN clinics c ON s.clinic_id = c.id
+		WHERE s.vet_id = $1 AND s.is_available = true
+		ORDER BY s.day_of_week, s.start_time`
 
-	rows, err := d.DB.Query(query)
+	rows, err := d.db.Query(query, vetID)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка запроса врачей: %v", err)
+		return nil, err
 	}
 	defer rows.Close()
 
-	var veterinarians []models.Veterinarian
-
+	var schedules []*models.Schedule
 	for rows.Next() {
-		var vet models.Veterinarian
-		err := rows.Scan(
-			&vet.ID,
-			&vet.Name,
-			&vet.Specialty,
-			&vet.Address,
-			&vet.Phone,
-			&vet.WorkHours,
-			&vet.CreatedAt,
-			&vet.UpdatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("ошибка сканирования врача: %v", err)
+		schedule := &models.Schedule{
+			Clinic: &models.Clinic{},
 		}
-		veterinarians = append(veterinarians, vet)
+		err := rows.Scan(&schedule.ID, &schedule.VetID, &schedule.ClinicID, &schedule.DayOfWeek,
+			&schedule.StartTime, &schedule.EndTime, &schedule.IsAvailable, &schedule.CreatedAt,
+			&schedule.Clinic.Name, &schedule.Clinic.Address, &schedule.Clinic.Phone, &schedule.Clinic.WorkingHours)
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
 	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка итерации по врачам: %v", err)
-	}
-
-	return veterinarians, nil
+	return schedules, nil
 }
 
-// FindVeterinariansBySpecialty ищет врачей по специализации
-func (d *Database) FindVeterinariansBySpecialty(specialty string) ([]models.Veterinarian, error) {
+func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models.Veterinarian, error) {
 	query := `
-		SELECT id, name, specialty, address, phone, work_hours, created_at, updated_at
-		FROM veterinarians WHERE LOWER(specialty) LIKE LOWER($1) ORDER BY name
-	`
+		SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email,
+		       v.description, v.experience_years, v.created_at
+		FROM veterinarians v
+		JOIN vet_specializations vs ON v.id = vs.vet_id
+		JOIN schedules s ON v.id = s.vet_id
+		WHERE v.is_active = true AND s.is_available = true
+		AND ($1 = 0 OR vs.specialization_id = $1)
+		AND ($2 = 0 OR s.day_of_week = $2)
+		AND ($3 = '' OR ($3::time BETWEEN s.start_time AND s.end_time))
+		AND ($4 = 0 OR s.clinic_id = $4)
+		ORDER BY v.experience_years DESC`
 
-	rows, err := d.DB.Query(query, "%"+specialty+"%")
+	rows, err := d.db.Query(query, criteria.SpecializationID, criteria.DayOfWeek,
+		criteria.Time, criteria.ClinicID)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка поиска врачей: %v", err)
+		return nil, err
 	}
 	defer rows.Close()
 
-	var veterinarians []models.Veterinarian
-
+	var vets []*models.Veterinarian
 	for rows.Next() {
-		var vet models.Veterinarian
-		err := rows.Scan(
-			&vet.ID,
-			&vet.Name,
-			&vet.Specialty,
-			&vet.Address,
-			&vet.Phone,
-			&vet.WorkHours,
-			&vet.CreatedAt,
-			&vet.UpdatedAt,
-		)
+		vet := &models.Veterinarian{}
+		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+			&vet.Description, &vet.ExperienceYears, &vet.CreatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("ошибка сканирования врача: %v", err)
+			return nil, err
 		}
-		veterinarians = append(veterinarians, vet)
+		vets = append(vets, vet)
 	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка итерации по врачам: %v", err)
-	}
-
-	return veterinarians, nil
+	return vets, nil
 }
 
-// UpdateVeterinarian обновляет данные врача
-func (d *Database) UpdateVeterinarian(id int64, updateData map[string]interface{}) error {
-	// Начинаем построение SQL запроса
-	query := "UPDATE veterinarians SET "
-	params := []interface{}{}
-	paramCount := 1
-
-	// Добавляем обновляемые поля
-	for field, value := range updateData {
-		query += fmt.Sprintf("%s = $%d, ", field, paramCount)
-		params = append(params, value)
-		paramCount++
-	}
-
-	// Добавляем обновление времени и условие WHERE
-	query += "updated_at = NOW() WHERE id = $" + fmt.Sprintf("%d", paramCount)
-	params = append(params, id)
-
-	// Выполняем запрос
-	result, err := d.DB.Exec(query, params...)
+// Clinic methods
+func (d *Database) GetAllClinics() ([]*models.Clinic, error) {
+	query := `SELECT id, name, address, phone, working_hours, created_at FROM clinics ORDER BY name`
+	rows, err := d.db.Query(query)
 	if err != nil {
-		return fmt.Errorf("ошибка обновления врача: %v", err)
+		return nil, err
 	}
+	defer rows.Close()
 
-	// Проверяем, что запись была обновлена
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("ошибка проверки обновления: %v", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("врач с ID %d не найден", id)
-	}
-
-	return nil
-}
-
-// DeleteVeterinarian удаляет врача по ID
-func (d *Database) DeleteVeterinarian(id int64) error {
-	query := "DELETE FROM veterinarians WHERE id = $1"
-
-	result, err := d.DB.Exec(query, id)
-	if err != nil {
-		return fmt.Errorf("ошибка удаления врача: %v", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("ошибка проверки удаления: %v", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("врач с ID %d не найден", id)
-	}
-
-	return nil
-}
-
-// UserExists проверяет существование пользователя
-func (d *Database) UserExists(chatID int64) (bool, error) {
-	query := "SELECT COUNT(*) FROM users WHERE chat_id = $1"
-
-	var count int
-	err := d.DB.QueryRow(query, chatID).Scan(&count)
-	if err != nil {
-		return false, fmt.Errorf("ошибка проверки пользователя: %v", err)
-	}
-
-	return count > 0, nil
-}
-
-// CreateUser создает нового пользователя
-func (d *Database) CreateUser(username string, chatID int64, isAdmin bool) error {
-	query := "INSERT INTO users (username, chat_id, is_admin) VALUES ($1, $2, $3)"
-
-	_, err := d.DB.Exec(query, username, chatID, isAdmin)
-	if err != nil {
-		return fmt.Errorf("ошибка создания пользователя: %v", err)
-	}
-
-	return nil
-}
-
-// IsAdmin проверяет, является ли пользователь администратором
-func (d *Database) IsAdmin(chatID int64) (bool, error) {
-	query := "SELECT is_admin FROM users WHERE chat_id = $1"
-
-	var isAdmin bool
-	err := d.DB.QueryRow(query, chatID).Scan(&isAdmin)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
+	var clinics []*models.Clinic
+	for rows.Next() {
+		clinic := &models.Clinic{}
+		err := rows.Scan(&clinic.ID, &clinic.Name, &clinic.Address, &clinic.Phone,
+			&clinic.WorkingHours, &clinic.CreatedAt)
+		if err != nil {
+			return nil, err
 		}
-		return false, fmt.Errorf("ошибка проверки администратора: %v", err)
+		clinics = append(clinics, clinic)
 	}
+	return clinics, nil
+}
 
-	return isAdmin, nil
+// UserRequest methods
+func (d *Database) CreateUserRequest(request *models.UserRequest) error {
+	query := `INSERT INTO user_requests (user_id, specialization_id, search_query) 
+	          VALUES ($1, $2, $3) RETURNING id, created_at`
+	err := d.db.QueryRow(query, request.UserID, request.SpecializationID, request.SearchQuery).
+		Scan(&request.ID, &request.CreatedAt)
+	return err
 }
