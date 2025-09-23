@@ -485,12 +485,24 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 
 	// Получаем информацию о клинике
 	clinics, err := h.db.GetAllClinics()
+	if err != nil {
+		log.Printf("Error getting clinics: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении информации о клинике")
+		h.bot.Send(msg)
+		return
+	}
+
 	var clinicName string
 	for _, c := range clinics {
 		if c.ID == clinicID {
 			clinicName = c.Name
 			break
 		}
+	}
+
+	// Если клиника не найдена, используем заглушку
+	if clinicName == "" {
+		clinicName = "Неизвестная клиника"
 	}
 
 	// Клавиатура с кнопками навигации

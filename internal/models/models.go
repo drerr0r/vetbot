@@ -45,6 +45,7 @@ type Clinic struct {
 	Address      string         `json:"address"`
 	Phone        sql.NullString `json:"phone"`         // Может быть NULL
 	WorkingHours sql.NullString `json:"working_hours"` // Может быть NULL
+	IsActive     bool           `json:"is_active"`     // Добавлено поле для деактивации
 	CreatedAt    time.Time      `json:"created_at"`
 }
 
@@ -77,4 +78,19 @@ type SearchCriteria struct {
 	DayOfWeek        int    `json:"day_of_week"`
 	Time             string `json:"time"`
 	ClinicID         int    `json:"clinic_id"`
+}
+
+// VetEditData временные данные для редактирования врача
+type VetEditData struct {
+	VetID           int    `json:"vet_id"`
+	Field           string `json:"field"`
+	CurrentValue    string `json:"current_value"`
+	Specializations string `json:"specializations"`
+}
+
+// ClinicEditData временные данные для редактирования клиники
+type ClinicEditData struct {
+	ClinicID     int    `json:"clinic_id"`
+	Field        string `json:"field"`
+	CurrentValue string `json:"current_value"`
 }

@@ -58,6 +58,13 @@ func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	isAdmin := h.isAdmin(update.Message.From.ID)
 	log.Printf("User %d is admin: %t", update.Message.From.ID, isAdmin)
 
+	// Если пользователь администратор и находится в админском режиме, передаем админским хендлерам
+	if isAdmin && h.isInAdminMode(update.Message.From.ID) {
+		log.Printf("Redirecting to admin handlers")
+		h.adminHandlers.HandleAdminMessage(update)
+		return
+	}
+
 	// Сначала проверяем команды поиска (/search_1, /search_2 и т.д.)
 	if strings.HasPrefix(update.Message.Text, "/search_") {
 		log.Printf("Is search command: %s", update.Message.Text)
@@ -69,13 +76,6 @@ func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	if update.Message.IsCommand() {
 		log.Printf("Is command: %s", update.Message.Command())
 		h.handleCommand(update, isAdmin)
-		return
-	}
-
-	// Если пользователь администратор и не команда, передаем админским хендлерам
-	if isAdmin {
-		log.Printf("Redirecting to admin handlers")
-		h.adminHandlers.HandleAdminMessage(update)
 		return
 	}
 
@@ -172,5 +172,14 @@ func (h *MainHandler) isAdmin(userID int64) bool {
 	}
 
 	log.Printf("User %d not found in admin list: %v", userID, h.config.AdminIDs)
+	return false
+}
+
+// isInAdminMode проверяет, находится ли пользователь в админском режиме
+func (h *MainHandler) isInAdminMode(userID int64) bool {
+	// Проверяем состояние админской сессии
+	if state, exists := h.adminHandlers.adminState[userID]; exists {
+		return state != ""
+	}
 	return false
 }
