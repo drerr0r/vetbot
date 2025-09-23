@@ -129,6 +129,17 @@ func (d *Database) GetSpecializationByID(id int) (*models.Specialization, error)
 	return spec, nil
 }
 
+// SpecializationExists проверяет существование специализации по ID
+func (d *Database) SpecializationExists(specID int) (bool, error) {
+	var exists bool
+	err := d.db.QueryRow("SELECT EXISTS(SELECT 1 FROM specializations WHERE id = $1)", specID).Scan(&exists)
+	if err != nil {
+		log.Printf("Error checking if specialization exists (ID: %d): %v", specID, err)
+		return false, err
+	}
+	return exists, nil
+}
+
 // Veterinarian methods
 func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*models.Veterinarian, error) {
 	query := `
@@ -174,7 +185,7 @@ func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*mo
 	return vets, nil
 }
 
-// Новый метод для получения специализаций врача
+// GetSpecializationsByVetID возвращает специализации врача
 func (d *Database) GetSpecializationsByVetID(vetID int) ([]*models.Specialization, error) {
 	query := `
 		SELECT s.id, s.name, s.description, s.created_at
@@ -350,5 +361,21 @@ func (d *Database) CreateUserRequest(request *models.UserRequest) error {
 	          VALUES ($1, $2, $3) RETURNING id, created_at`
 	err := d.db.QueryRow(query, request.UserID, request.SpecializationID, request.SearchQuery).
 		Scan(&request.ID, &request.CreatedAt)
+	return err
+}
+
+// AddUserIfNotExists добавляет пользователя если его еще нет (для совместимости со старым кодом)
+func (d *Database) AddUserIfNotExists(telegramID int64, username, firstName, lastName string) error {
+	query := `INSERT INTO users (telegram_id, username, first_name, last_name) 
+	          VALUES ($1, $2, $3, $4) 
+			  ON CONFLICT (telegram_id) DO UPDATE 
+			  SET username = EXCLUDED.username, first_name = EXCLUDED.first_name, 
+			      last_name = EXCLUDED.last_name
+			  RETURNING id, created_at`
+
+	var userID int
+	var createdAt time.Time
+	err := d.db.QueryRow(query, telegramID, username, firstName, lastName).
+		Scan(&userID, &createdAt)
 	return err
 }

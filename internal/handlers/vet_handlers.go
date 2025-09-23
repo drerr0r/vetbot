@@ -43,19 +43,25 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 		log.Printf("Error creating user: %v", err)
 	}
 
+	// Создаем главное меню с inline-кнопками
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔍 Поиск по специализациям", "main_specializations"),
+			tgbotapi.NewInlineKeyboardButtonData("🕐 Поиск по времени", "main_time"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🏥 Поиск по клиникам", "main_clinics"),
+			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
+		),
+	)
+
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		`🐾 Добро пожаловать в VetBot! 🐾
 
-Я помогу вам найти ветеринарного врача по нужной специализации и расписанию.
+Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:`)
+	msg.ReplyMarkup = keyboard
 
-Доступные команды:
-/start - начать работу
-/specializations - показать специализации врачей
-/search - поиск врача
-/clinics - список клиник
-/help - помощь`)
-
-	log.Printf("Sending start message")
+	log.Printf("Sending start message with inline keyboard")
 	_, err = h.bot.Send(msg)
 	if err != nil {
 		log.Printf("Error sending start message: %v", err)
@@ -64,14 +70,29 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 	}
 }
 
-// HandleSpecializations показывает список специализаций (HTML версия)
+// HandleSpecializations показывает список специализаций с улучшенным интерфейсом
 func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
 	log.Printf("HandleSpecializations called")
+
+	var chatID int64
+
+	// Определяем chatID в зависимости от типа update
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		// Отвечаем на callback query чтобы убрать "часики" у кнопки
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
 
 	specializations, err := h.db.GetAllSpecializations()
 	if err != nil {
 		log.Printf("Error getting specializations: %v", err)
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка специализаций")
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка специализаций")
 		h.bot.Send(msg)
 		return
 	}
@@ -79,142 +100,305 @@ func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
 	log.Printf("Found %d specializations", len(specializations))
 
 	if len(specializations) == 0 {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Специализации не найдены")
+		msg := tgbotapi.NewMessage(chatID, "Специализации не найдены")
 		h.bot.Send(msg)
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString("🏥 <b>Доступные специализации:</b>\n\n")
+	// Создаем кнопки для специализаций (максимум 3 в ряду)
+	var keyboardRows [][]tgbotapi.InlineKeyboardButton
+	var currentRow []tgbotapi.InlineKeyboardButton
 
-	for _, spec := range specializations {
-		log.Printf("Specialization: %s (ID: %d)", spec.Name, spec.ID)
+	for i, spec := range specializations {
+		btn := tgbotapi.NewInlineKeyboardButtonData(
+			spec.Name,
+			fmt.Sprintf("search_spec_%d", spec.ID),
+		)
+		currentRow = append(currentRow, btn)
 
-		sb.WriteString(fmt.Sprintf("• <b>%s</b>", html.EscapeString(spec.Name)))
-		if spec.Description != "" {
-			sb.WriteString(fmt.Sprintf(" - %s", html.EscapeString(spec.Description)))
+		// Создаем новый ряд после каждых 3 кнопок или в конце
+		if (i+1)%3 == 0 || i == len(specializations)-1 {
+			keyboardRows = append(keyboardRows, currentRow)
+			currentRow = []tgbotapi.InlineKeyboardButton{}
 		}
-		sb.WriteString(fmt.Sprintf(" (/search_%d)\n", spec.ID))
 	}
 
-	sb.WriteString("\nНажмите на команду для поиска врачей этой специализации")
+	// Добавляем кнопку "Назад"
+	backRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
+	)
+	keyboardRows = append(keyboardRows, backRow)
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
-	msg.ParseMode = "HTML"
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
 
-	log.Printf("Sending specializations message with HTML formatting")
+	msg := tgbotapi.NewMessage(chatID,
+		"🏥 *Выберите специализацию врача:*\n\nНажмите на кнопку с нужной специализацией для поиска врачей.")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	log.Printf("Sending specializations menu to chat %d", chatID)
 	_, err = h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending specializations message with HTML: %v", err)
-
-		// Попробуем отправить без форматирования
-		log.Printf("Trying without formatting")
-		msg2 := tgbotapi.NewMessage(update.Message.Chat.ID,
-			"🏥 Доступные специализации:\n\n"+
-				"• Терапевт (/search_1)\n"+
-				"• Хирург (/search_2)\n"+
-				"• Стоматолог (/search_3)\n"+
-				"• Дерматолог (/search_4)\n"+
-				"• Офтальмолог (/search_5)\n"+
-				"• Кардиолог (/search_6)\n"+
-				"• Ортопед (/search_7)\n\n"+
-				"Нажмите на команду для поиска врачей этой специализации")
-		h.bot.Send(msg2)
-	} else {
-		log.Printf("Specializations message sent successfully with HTML")
+		log.Printf("Error sending specializations menu: %v", err)
 	}
 }
 
-// HandleSearch запускает процесс поиска врачей
+// HandleSearch показывает меню поиска по времени
 func (h *VetHandlers) HandleSearch(update tgbotapi.Update) {
 	log.Printf("HandleSearch called")
 
-	// Создаем клавиатуру с днями недели
+	var chatID int64
+
+	// Определяем chatID в зависимости от типа update
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
+
+	// Создаем клавиатуру с днями недели и кнопкой "Назад"
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Понедельник", "search_day_1"),
 			tgbotapi.NewInlineKeyboardButtonData("Вторник", "search_day_2"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Среда", "search_day_3"),
-			tgbotapi.NewInlineKeyboardButtonData("Четверг", "search_day_4"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Четверг", "search_day_4"),
 			tgbotapi.NewInlineKeyboardButtonData("Пятница", "search_day_5"),
 			tgbotapi.NewInlineKeyboardButtonData("Суббота", "search_day_6"),
-			tgbotapi.NewInlineKeyboardButtonData("Воскресенье", "search_day_7"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Воскресенье", "search_day_7"),
 			tgbotapi.NewInlineKeyboardButtonData("Любой день", "search_day_0"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
 		),
 	)
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите день недели для поиска:")
+	msg := tgbotapi.NewMessage(chatID,
+		"🕐 *Выберите день недели для поиска:*\n\nЯ покажу врачей, работающих в выбранный день.")
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending search message")
+	log.Printf("Sending search by time menu to chat %d", chatID)
 	_, err := h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending search message: %v", err)
-	} else {
-		log.Printf("Search message sent successfully")
+		log.Printf("Error sending search menu: %v", err)
 	}
 }
 
-// HandleSearchBySpecialization ищет врачей по специализации
+// HandleClinics показывает меню клиник
+func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
+	log.Printf("HandleClinics called")
+
+	var chatID int64
+
+	// Определяем chatID в зависимости от типа update
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
+
+	clinics, err := h.db.GetAllClinics()
+	if err != nil {
+		log.Printf("Error getting clinics: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка клиник")
+		h.bot.Send(msg)
+		return
+	}
+
+	log.Printf("Found %d clinics", len(clinics))
+
+	if len(clinics) == 0 {
+		msg := tgbotapi.NewMessage(chatID, "Клиники не найдены")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Создаем кнопки для клиник
+	var keyboardRows [][]tgbotapi.InlineKeyboardButton
+	var currentRow []tgbotapi.InlineKeyboardButton
+
+	for i, clinic := range clinics {
+		btn := tgbotapi.NewInlineKeyboardButtonData(
+			clinic.Name,
+			fmt.Sprintf("search_clinic_%d", clinic.ID),
+		)
+		currentRow = append(currentRow, btn)
+
+		// Создаем новый ряд после каждых 2 кнопок или в конце
+		if (i+1)%2 == 0 || i == len(clinics)-1 {
+			keyboardRows = append(keyboardRows, currentRow)
+			currentRow = []tgbotapi.InlineKeyboardButton{}
+		}
+	}
+
+	// Добавляем кнопку "Назад"
+	backRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
+	)
+	keyboardRows = append(keyboardRows, backRow)
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
+
+	msg := tgbotapi.NewMessage(chatID,
+		"🏥 *Выберите клинику:*\n\nЯ покажу врачей, работающих в выбранной клинике.")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	log.Printf("Sending clinics menu to chat %d", chatID)
+	_, err = h.bot.Send(msg)
+	if err != nil {
+		log.Printf("Error sending clinics menu: %v", err)
+	}
+}
+
+// HandleHelp показывает справку с кнопкой "Назад"
+func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
+	log.Printf("HandleHelp called")
+
+	var chatID int64
+
+	// Определяем chatID в зависимости от типа update
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
+		),
+	)
+
+	helpText := `🐾 *VetBot - Помощь* 🐾
+
+*Основные функции:*
+• 🔍 *Поиск по специализациям* - найти врача по направлению
+• 🕐 *Поиск по времени* - найти врача по дню недели
+• 🏥 *Поиск по клиникам* - найти врачей в конкретной клинике
+
+*Как пользоваться:*
+1. Выберите способ поиска из главного меню
+2. Нажмите на нужную кнопку (специализация, день или клиника)
+3. Бот покажет список врачей с контактами и расписанием
+
+*Команды:*
+/start - Главное меню
+/help - Эта справка`
+
+	msg := tgbotapi.NewMessage(chatID, helpText)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	log.Printf("Sending help message to chat %d", chatID)
+	_, err := h.bot.Send(msg)
+	if err != nil {
+		log.Printf("Error sending help message: %v", err)
+	}
+}
+
+// HandleSearchBySpecialization ищет врачей по специализации с кнопкой "Назад"
 func (h *VetHandlers) HandleSearchBySpecialization(update tgbotapi.Update, specializationID int) {
 	log.Printf("HandleSearchBySpecialization called with ID: %d", specializationID)
+
+	var chatID int64
+	var messageID int
+
+	// Определяем chatID в зависимости от типа update
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		messageID = update.CallbackQuery.Message.MessageID
+		// Отвечаем на callback query чтобы убрать "часики" у кнопки
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
 
 	vets, err := h.db.GetVeterinariansBySpecialization(specializationID)
 	if err != nil {
 		log.Printf("Error getting veterinarians: %v", err)
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при поиске врачей")
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при поиске врачей")
 		h.bot.Send(msg)
 		return
 	}
 
 	log.Printf("Found %d veterinarians for specialization ID: %d", len(vets), specializationID)
 
-	if len(vets) == 0 {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Врачи по выбранной специализации не найдены")
-		h.bot.Send(msg)
-		return
-	}
-
 	spec, err := h.db.GetSpecializationByID(specializationID)
 	if err != nil {
 		log.Printf("Error getting specialization: %v", err)
 	}
 
+	// Создаем клавиатуру с кнопкой "Назад"
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 К специализациям", "main_specializations"),
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
+		),
+	)
+
+	if len(vets) == 0 {
+		var specName string
+		if spec != nil {
+			specName = spec.Name
+		} else {
+			specName = "выбранной специализации"
+		}
+
+		msg := tgbotapi.NewMessage(chatID,
+			fmt.Sprintf("👨‍⚕️ *Врачи по специализации \"%s\" не найдены*\n\nПопробуйте выбрать другую специализацию.", specName))
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
+		return
+	}
+
 	var sb strings.Builder
 	if spec != nil {
-		sb.WriteString(fmt.Sprintf("👨‍⚕️ <b>Врачи по специализации \"%s\":</b>\n\n", html.EscapeString(spec.Name)))
+		sb.WriteString(fmt.Sprintf("👨‍⚕️ *Врачи по специализации \"%s\":*\n\n", html.EscapeString(spec.Name)))
 	} else {
-		sb.WriteString("👨‍⚕️ <b>Найденные врачи:</b>\n\n")
+		sb.WriteString("👨‍⚕️ *Найденные врачи:*\n\n")
 	}
 
 	for i, vet := range vets {
-		sb.WriteString(fmt.Sprintf("<b>%d. %s %s</b>\n", i+1, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
-		sb.WriteString(fmt.Sprintf("📞 Телефон: <code>%s</code>\n", html.EscapeString(vet.Phone)))
+		sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", i+1, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
+		sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
 
-		// Проверяем email (может быть NULL)
 		if vet.Email.Valid && vet.Email.String != "" {
-			sb.WriteString(fmt.Sprintf("📧 Email: %s\n", html.EscapeString(vet.Email.String)))
+			sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
 		}
 
-		// Проверяем опыт работы (может быть NULL)
 		if vet.ExperienceYears.Valid {
-			sb.WriteString(fmt.Sprintf("💼 Опыт: %d лет\n", vet.ExperienceYears.Int64))
+			sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
 		}
 
-		// Проверяем описание (может быть NULL)
-		if vet.Description.Valid && vet.Description.String != "" {
-			sb.WriteString(fmt.Sprintf("📝 %s\n", html.EscapeString(vet.Description.String)))
-		}
-
-		// Показываем специализации врача
+		// Специализации врача
 		if len(vet.Specializations) > 0 {
-			sb.WriteString("🎯 Специализации: ")
+			sb.WriteString("🎯 *Специализации:* ")
 			specNames := make([]string, len(vet.Specializations))
 			for j, spec := range vet.Specializations {
 				specNames[j] = html.EscapeString(spec.Name)
@@ -223,13 +407,12 @@ func (h *VetHandlers) HandleSearchBySpecialization(update tgbotapi.Update, speci
 			sb.WriteString("\n")
 		}
 
-		// Получаем расписание врача
+		// Расписание врача
 		schedules, err := h.db.GetSchedulesByVetID(vet.ID)
 		if err == nil && len(schedules) > 0 {
-			sb.WriteString("🕐 Расписание:\n")
+			sb.WriteString("🕐 *Расписание:*\n")
 			for _, schedule := range schedules {
 				dayName := getDayName(schedule.DayOfWeek)
-				// Проверяем что время не пустое
 				startTime := schedule.StartTime
 				endTime := schedule.EndTime
 				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
@@ -245,147 +428,132 @@ func (h *VetHandlers) HandleSearchBySpecialization(update tgbotapi.Update, speci
 		sb.WriteString("\n")
 	}
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
-	msg.ParseMode = "HTML"
-
-	log.Printf("Sending search results message")
-	_, err = h.bot.Send(msg)
-	if err != nil {
-		log.Printf("Error sending search results message with HTML: %v", err)
-
-		// Попробуем без HTML
-		msg2 := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
-		msg2.ParseMode = ""
-		h.bot.Send(msg2)
+	// Если это callback query и есть messageID, редактируем существующее сообщение
+	if update.CallbackQuery != nil && messageID != 0 {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, sb.String())
+		editMsg.ParseMode = "Markdown"
+		editMsg.ReplyMarkup = &keyboard
+		_, err = h.bot.Send(editMsg)
+		if err != nil {
+			log.Printf("Error editing message: %v", err)
+			// Если редактирование не удалось, отправляем новое сообщение
+			msg := tgbotapi.NewMessage(chatID, sb.String())
+			msg.ParseMode = "Markdown"
+			msg.ReplyMarkup = keyboard
+			h.bot.Send(msg)
+		}
 	} else {
-		log.Printf("Search results message sent successfully")
+		msg := tgbotapi.NewMessage(chatID, sb.String())
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
 	}
 }
 
-// HandleClinics показывает список клиник
-func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
-	log.Printf("HandleClinics called")
+// HandleSearchByClinic ищет врачей по клинике
+func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int) {
+	log.Printf("HandleSearchByClinic called with ID: %d", clinicID)
 
-	clinics, err := h.db.GetAllClinics()
+	var chatID int64
+	var messageID int
+
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		messageID = update.CallbackQuery.Message.MessageID
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
+
+	// Получаем врачей клиники через расписание
+	criteria := &models.SearchCriteria{
+		ClinicID: clinicID,
+	}
+	vets, err := h.db.FindAvailableVets(criteria)
 	if err != nil {
-		log.Printf("Error getting clinics: %v", err)
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка клиник")
+		log.Printf("Error finding vets by clinic: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при поиске врачей")
 		h.bot.Send(msg)
 		return
 	}
 
-	log.Printf("Found %d clinics", len(clinics))
+	log.Printf("Found %d veterinarians for clinic ID: %d", len(vets), clinicID)
 
-	if len(clinics) == 0 {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Клиники не найдены")
+	// Получаем информацию о клинике
+	clinics, err := h.db.GetAllClinics()
+	var clinicName string
+	for _, c := range clinics {
+		if c.ID == clinicID {
+			clinicName = c.Name
+			break
+		}
+	}
+
+	// Клавиатура с кнопками навигации
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 К клиникам", "main_clinics"),
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
+		),
+	)
+
+	if len(vets) == 0 {
+		msg := tgbotapi.NewMessage(chatID,
+			fmt.Sprintf("🏥 *Врачи в клинике \"%s\" не найдены*\n\nПопробуйте выбрать другую клинику.", clinicName))
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
 		h.bot.Send(msg)
 		return
 	}
 
 	var sb strings.Builder
-	sb.WriteString("🏢 <b>Список клиник:</b>\n\n")
+	sb.WriteString(fmt.Sprintf("🏥 *Врачи в клинике \"%s\":*\n\n", html.EscapeString(clinicName)))
 
-	for i, clinic := range clinics {
-		sb.WriteString(fmt.Sprintf("<b>%d. %s</b>\n", i+1, html.EscapeString(clinic.Name)))
-		sb.WriteString(fmt.Sprintf("📍 Адрес: %s\n", html.EscapeString(clinic.Address)))
+	for i, vet := range vets {
+		sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", i+1, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
+		sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
 
-		// Проверяем телефон (может быть NULL)
-		if clinic.Phone.Valid && clinic.Phone.String != "" {
-			sb.WriteString(fmt.Sprintf("📞 Телефон: <code>%s</code>\n", html.EscapeString(clinic.Phone.String)))
+		if vet.Email.Valid && vet.Email.String != "" {
+			sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
 		}
 
-		// Проверяем часы работы (может быть NULL)
-		if clinic.WorkingHours.Valid && clinic.WorkingHours.String != "" {
-			sb.WriteString(fmt.Sprintf("🕐 Часы работы: %s\n", html.EscapeString(clinic.WorkingHours.String)))
+		if vet.ExperienceYears.Valid {
+			sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
+		}
+
+		// Специализации врача
+		specs, err := h.db.GetSpecializationsByVetID(vet.ID)
+		if err == nil && len(specs) > 0 {
+			sb.WriteString("🎯 *Специализации:* ")
+			specNames := make([]string, len(specs))
+			for j, spec := range specs {
+				specNames[j] = html.EscapeString(spec.Name)
+			}
+			sb.WriteString(strings.Join(specNames, ", "))
+			sb.WriteString("\n")
 		}
 
 		sb.WriteString("\n")
 	}
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
-	msg.ParseMode = "HTML"
-
-	log.Printf("Sending clinics message")
-	_, err = h.bot.Send(msg)
-	if err != nil {
-		log.Printf("Error sending clinics message with HTML: %v", err)
-
-		// Попробуем без HTML
-		msg2 := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
-		msg2.ParseMode = ""
-		h.bot.Send(msg2)
+	if update.CallbackQuery != nil && messageID != 0 {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, sb.String())
+		editMsg.ParseMode = "Markdown"
+		editMsg.ReplyMarkup = &keyboard
+		h.bot.Send(editMsg)
 	} else {
-		log.Printf("Clinics message sent successfully")
+		msg := tgbotapi.NewMessage(chatID, sb.String())
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
 	}
 }
 
-// HandleHelp показывает справку
-func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
-	log.Printf("HandleHelp called")
-
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-		`🐾 <b>VetBot - Помощь</b> 🐾
-
-<b>Команды:</b>
-/start - Начать работу с ботом
-/specializations - Показать все специализации врачей
-/search - Поиск врача по расписанию
-/clinics - Список всех клиник
-/help - Показать эту справку
-
-<b>Как пользоваться:</b>
-1. Используйте /specializations чтобы увидеть доступные специализации
-2. Нажмите на команду поиска рядом с нужной специализацией
-3. Или используйте /search для выбора дня недели
-4. Бот покажет список врачей с контактами и расписанием
-
-<b>Примечание:</b> Телефоны врачей и клиник отображаются в формате, удобном для звонка.`)
-
-	msg.ParseMode = "HTML"
-
-	log.Printf("Sending help message")
-	_, err := h.bot.Send(msg)
-	if err != nil {
-		log.Printf("Error sending help message with HTML: %v", err)
-
-		// Попробуем без HTML
-		msg2 := tgbotapi.NewMessage(update.Message.Chat.ID,
-			`🐾 VetBot - Помощь 🐾
-
-Команды:
-/start - Начать работу с ботом
-/specializations - Показать все специализации врачей
-/search - Поиск врача по расписанию
-/clinics - Список всех клиник
-/help - Показать эту справку
-
-Как пользоваться:
-1. Используйте /specializations чтобы увидеть доступные специализации
-2. Нажмите на команду поиска рядом с нужной специализацией
-3. Или используйте /search для выбора дня недели
-4. Бот покажет список врачей с контактами и расписанием
-
-Примечание: Телефоны врачей и клиник отображаются в формате, удобном для звонка.`)
-		h.bot.Send(msg2)
-	} else {
-		log.Printf("Help message sent successfully")
-	}
-}
-
-// HandleTest для тестирования
-func (h *VetHandlers) HandleTest(update tgbotapi.Update) {
-	log.Printf("HandleTest called")
-
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Тестовое сообщение: бот работает!")
-	_, err := h.bot.Send(msg)
-	if err != nil {
-		log.Printf("Error sending test message: %v", err)
-	} else {
-		log.Printf("Test message sent successfully")
-	}
-}
-
-// HandleCallback обрабатывает inline callback запросы
+// HandleCallback обрабатывает все inline callback запросы
 func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 	log.Printf("HandleCallback called")
 
@@ -394,14 +562,103 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 
 	log.Printf("Callback data: %s", data)
 
-	if strings.HasPrefix(data, "search_day_") {
+	// Обрабатываем разные типы callback данных
+	switch {
+	case data == "main_menu":
+		h.showMainMenu(callback)
+	case data == "main_specializations":
+		h.HandleSpecializations(update)
+	case data == "main_time":
+		h.HandleSearch(update)
+	case data == "main_clinics":
+		h.HandleClinics(update)
+	case data == "main_help":
+		h.HandleHelp(update)
+	case strings.HasPrefix(data, "search_spec_"):
+		h.handleSearchSpecCallback(callback)
+	case strings.HasPrefix(data, "search_day_"):
 		h.handleDaySelection(callback)
+	case strings.HasPrefix(data, "search_clinic_"):
+		h.handleSearchClinicCallback(callback)
+	default:
+		// Неизвестный callback
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Неизвестная команда")
+		h.bot.Request(callbackConfig)
+	}
+}
+
+// showMainMenu показывает главное меню
+func (h *VetHandlers) showMainMenu(callback *tgbotapi.CallbackQuery) {
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔍 Поиск по специализациям", "main_specializations"),
+			tgbotapi.NewInlineKeyboardButtonData("🕐 Поиск по времени", "main_time"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🏥 Поиск по клиникам", "main_clinics"),
+			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
+		),
+	)
+
+	editMsg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID,
+		`🐾 Добро пожаловать в VetBot! 🐾
+
+Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:`)
+	editMsg.ReplyMarkup = &keyboard
+
+	_, err := h.bot.Send(editMsg)
+	if err != nil {
+		log.Printf("Error editing message to main menu: %v", err)
+		// Если редактирование не удалось, отправляем новое сообщение
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID,
+			`🐾 Добро пожаловать в VetBot! 🐾
+
+Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:`)
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
+	}
+
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "")
+	h.bot.Request(callbackConfig)
+}
+
+// handleSearchSpecCallback обрабатывает callback поиска по специализации
+func (h *VetHandlers) handleSearchSpecCallback(callback *tgbotapi.CallbackQuery) {
+	specIDStr := strings.TrimPrefix(callback.Data, "search_spec_")
+	specID, err := strconv.Atoi(specIDStr)
+	if err != nil {
+		log.Printf("Error parsing specialization ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
 		return
 	}
 
-	// Отправляем уведомление о том, что действие выполнено
-	callbackConfig := tgbotapi.NewCallback(callback.ID, "Обработка...")
-	h.bot.Request(callbackConfig)
+	log.Printf("Searching for specialization ID: %d", specID)
+
+	// Создаем update для передачи в HandleSearchBySpecialization
+	update := tgbotapi.Update{
+		CallbackQuery: callback,
+	}
+	h.HandleSearchBySpecialization(update, specID)
+}
+
+// handleSearchClinicCallback обрабатывает callback поиска по клинике
+func (h *VetHandlers) handleSearchClinicCallback(callback *tgbotapi.CallbackQuery) {
+	clinicIDStr := strings.TrimPrefix(callback.Data, "search_clinic_")
+	clinicID, err := strconv.Atoi(clinicIDStr)
+	if err != nil {
+		log.Printf("Error parsing clinic ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	log.Printf("Searching for clinic ID: %d", clinicID)
+
+	update := tgbotapi.Update{
+		CallbackQuery: callback,
+	}
+	h.HandleSearchByClinic(update, clinicID)
 }
 
 // handleDaySelection обрабатывает выбор дня для поиска
@@ -432,10 +689,20 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 	log.Printf("Found %d vets for day %d", len(vets), day)
 
+	// Клавиатура с кнопками навигации
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 К дням недели", "main_time"),
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
+		),
+	)
+
 	if len(vets) == 0 {
 		dayName := getDayName(day)
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID,
-			fmt.Sprintf("Врачи на %s не найдены", dayName))
+			fmt.Sprintf("🕐 *Врачи, работающие в %s, не найдены*\n\nПопробуйте выбрать другой день.", dayName))
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
 		h.bot.Send(msg)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Поиск завершен")
 		h.bot.Request(callbackConfig)
@@ -444,33 +711,30 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 	var sb strings.Builder
 	dayName := getDayName(day)
-	sb.WriteString(fmt.Sprintf("👨‍⚕️ <b>Врачи, работающие в %s:</b>\n\n", dayName))
+	sb.WriteString(fmt.Sprintf("🕐 *Врачи, работающие в %s:*\n\n", dayName))
 
 	for i, vet := range vets {
-		sb.WriteString(fmt.Sprintf("<b>%d. %s %s</b>\n", i+1, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
-		sb.WriteString(fmt.Sprintf("📞 Телефон: <code>%s</code>\n", html.EscapeString(vet.Phone)))
+		sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", i+1, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
+		sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
 
-		// Проверяем email (может быть NULL)
 		if vet.Email.Valid && vet.Email.String != "" {
-			sb.WriteString(fmt.Sprintf("📧 Email: %s\n", html.EscapeString(vet.Email.String)))
+			sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
 		}
 
-		// Проверяем опыт работы (может быть NULL)
 		if vet.ExperienceYears.Valid {
-			sb.WriteString(fmt.Sprintf("💼 Опыт: %d лет\n", vet.ExperienceYears.Int64))
+			sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
 		}
 
-		// Показываем расписание для выбранного дня
+		// Расписание для выбранного дня
 		schedules, err := h.db.GetSchedulesByVetID(vet.ID)
 		if err == nil {
 			for _, schedule := range schedules {
 				if schedule.DayOfWeek == day || day == 0 {
 					scheduleDayName := getDayName(schedule.DayOfWeek)
-					// Проверяем что время не пустое
 					startTime := schedule.StartTime
 					endTime := schedule.EndTime
 					if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
-						sb.WriteString(fmt.Sprintf("🕐 %s: %s-%s", scheduleDayName, startTime, endTime))
+						sb.WriteString(fmt.Sprintf("🕐 *%s:* %s-%s", scheduleDayName, startTime, endTime))
 						if schedule.Clinic != nil && schedule.Clinic.Name != "" {
 							sb.WriteString(fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name)))
 						}
@@ -482,22 +746,35 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 		sb.WriteString("\n")
 	}
 
-	msg := tgbotapi.NewMessage(callback.Message.Chat.ID, sb.String())
-	msg.ParseMode = "HTML"
+	editMsg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, sb.String())
+	editMsg.ParseMode = "Markdown"
+	editMsg.ReplyMarkup = &keyboard
 
-	log.Printf("Sending day search results")
-	_, err = h.bot.Send(msg)
+	_, err = h.bot.Send(editMsg)
 	if err != nil {
-		log.Printf("Error sending day search results with HTML: %v", err)
-
-		// Попробуем без HTML
-		msg2 := tgbotapi.NewMessage(callback.Message.Chat.ID, sb.String())
-		msg2.ParseMode = ""
-		h.bot.Send(msg2)
+		log.Printf("Error sending day search results: %v", err)
+		// Если редактирование не удалось, отправляем новое сообщение
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, sb.String())
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
 	}
 
 	callbackConfig := tgbotapi.NewCallback(callback.ID, "Поиск завершен")
 	h.bot.Request(callbackConfig)
+}
+
+// HandleTest для тестирования
+func (h *VetHandlers) HandleTest(update tgbotapi.Update) {
+	log.Printf("HandleTest called")
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Тестовое сообщение: бот работает!")
+	_, err := h.bot.Send(msg)
+	if err != nil {
+		log.Printf("Error sending test message: %v", err)
+	} else {
+		log.Printf("Test message sent successfully")
+	}
 }
 
 // getDayName возвращает русское название дня недели
