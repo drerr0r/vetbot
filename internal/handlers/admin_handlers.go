@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -65,9 +66,19 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 
 	log.Printf("Admin message from %d: %s (state: %s)", userID, text, state)
 
+	// Сначала проверяем кнопку "Назад" независимо от состояния
+	if text == "🔙 Назад" {
+		h.handleBackButton(update)
+		return
+	}
+
 	switch state {
 	case "main_menu":
 		h.handleMainMenu(update, text)
+	case "vet_management":
+		h.handleVetManagement(update, text)
+	case "clinic_management":
+		h.handleClinicManagement(update, text)
 	case "add_vet_name":
 		h.handleAddVetName(update, text)
 	case "add_vet_phone":
@@ -76,6 +87,33 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleAddVetSpecializations(update, text)
 	default:
 		h.handleMainMenu(update, text)
+	}
+}
+
+// handleBackButton обрабатывает кнопку "Назад"
+func (h *AdminHandlers) handleBackButton(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+
+	// Определяем текущее состояние и возвращаемся на уровень выше
+	switch h.adminState[userID] {
+	case "vet_management", "clinic_management":
+		// Возврат из подменю в главное меню
+		h.adminState[userID] = "main_menu"
+		h.HandleAdmin(update)
+	case "add_vet_name", "add_vet_phone", "add_vet_specializations":
+		// Возврат из процесса добавления врача в меню управления врачами
+		h.adminState[userID] = "vet_management"
+
+		// Очищаем временные данные
+		userIDStr := strconv.FormatInt(userID, 10)
+		delete(h.tempData, userIDStr+"_name")
+		delete(h.tempData, userIDStr+"_phone")
+
+		h.showVetManagement(update)
+	default:
+		// По умолчанию возвращаем в главное меню
+		h.adminState[userID] = "main_menu"
+		h.HandleAdmin(update)
 	}
 }
 
@@ -92,13 +130,39 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showSettings(update)
 	case "❌ Выйти из админки":
 		h.closeAdmin(update)
+	default:
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"Используйте кнопки админской панели")
+		h.bot.Send(msg)
+	}
+}
+
+// handleVetManagement обрабатывает меню управления врачами
+func (h *AdminHandlers) handleVetManagement(update tgbotapi.Update, text string) {
+	switch text {
 	case "➕ Добавить врача":
 		h.startAddVet(update)
 	case "📋 Список врачей":
 		h.showVetList(update)
+	case "🔙 Назад":
+		h.handleBackButton(update)
 	default:
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-			"Используйте кнопки админской панели")
+			"Используйте кнопки меню управления врачами")
+		h.bot.Send(msg)
+	}
+}
+
+// handleClinicManagement обрабатывает меню управления клиниками
+func (h *AdminHandlers) handleClinicManagement(update tgbotapi.Update, text string) {
+	switch text {
+	case "📋 Список клиник":
+		h.showClinicList(update)
+	case "🔙 Назад":
+		h.handleBackButton(update)
+	default:
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"Используйте кнопки меню управления клиниками")
 		h.bot.Send(msg)
 	}
 }
@@ -174,12 +238,19 @@ func (h *AdminHandlers) handleAddVetPhone(update tgbotapi.Update, phone string) 
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString("🎯 Выберите специализации врача (введите номера через запятую):\n\n")
+	// Сортируем специализации по ID для предсказуемости
+	sort.Slice(specializations, func(i, j int) bool {
+		return specializations[i].ID < specializations[j].ID
+	})
 
-	for i, spec := range specializations {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, spec.Name))
+	var sb strings.Builder
+	sb.WriteString("🎯 Выберите специализации врача (введите ID через запятую):\n\n")
+
+	for _, spec := range specializations {
+		sb.WriteString(fmt.Sprintf("ID %d: %s\n", spec.ID, spec.Name))
 	}
+
+	sb.WriteString("\nПример: 1,3,5")
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
 	h.bot.Send(msg)
@@ -199,6 +270,14 @@ func (h *AdminHandlers) handleAddVetSpecializations(update tgbotapi.Update, spec
 			"Ошибка: данные врача не найдены. Начните заново.")
 		h.bot.Send(msg)
 		h.startAddVet(update)
+		return
+	}
+
+	// Валидация введенных ID специализаций
+	if !h.isValidSpecializationIDs(specsText) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"❌ Неверный формат ID специализаций. Введите существующие ID через запятую (например: 1,3,5)")
+		h.bot.Send(msg)
 		return
 	}
 
@@ -226,9 +305,41 @@ func (h *AdminHandlers) handleAddVetSpecializations(update tgbotapi.Update, spec
 	delete(h.tempData, userIDStr+"_name")
 	delete(h.tempData, userIDStr+"_phone")
 
-	// Возвращаем в главное меню
-	h.adminState[userID] = "main_menu"
+	// Возвращаем в меню управления врачами
+	h.adminState[userID] = "vet_management"
 	h.showVetManagement(update)
+}
+
+// isValidSpecializationIDs проверяет валидность введенных ID специализаций
+func (h *AdminHandlers) isValidSpecializationIDs(input string) bool {
+	// Получаем максимальный ID специализации для проверки
+	maxID, err := h.getMaxSpecializationID()
+	if err != nil {
+		log.Printf("Error getting max specialization ID: %v", err)
+		return false
+	}
+
+	ids := strings.Split(input, ",")
+	for _, idStr := range ids {
+		id, err := strconv.Atoi(strings.TrimSpace(idStr))
+		if err != nil || id <= 0 || id > maxID {
+			return false
+		}
+
+		// Дополнительная проверка существования специализации в БД
+		exists, err := h.db.SpecializationExists(id)
+		if err != nil || !exists {
+			return false
+		}
+	}
+	return true
+}
+
+// getMaxSpecializationID возвращает максимальный ID специализации
+func (h *AdminHandlers) getMaxSpecializationID() (int, error) {
+	var maxID int
+	err := h.db.GetDB().QueryRow("SELECT COALESCE(MAX(id), 0) FROM specializations").Scan(&maxID)
+	return maxID, err
 }
 
 // addVeterinarian добавляет врача в базу данных
@@ -245,16 +356,31 @@ func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText stri
 
 	// Обрабатываем специализации
 	specIDs := strings.Split(specsText, ",")
+	log.Printf("Adding vet ID %d with specializations: %v", vet.ID, specIDs)
+
 	for _, specIDStr := range specIDs {
 		specID, err := strconv.Atoi(strings.TrimSpace(specIDStr))
 		if err == nil && specID > 0 {
-			// Добавляем связь врач-специализация
-			_, err = h.db.GetDB().Exec(
-				"INSERT INTO vet_specializations (vet_id, specialization_id) VALUES ($1, $2)",
-				vet.ID, specID,
-			)
+			// Проверяем существование специализации
+			exists, err := h.db.SpecializationExists(specID)
 			if err != nil {
-				log.Printf("Error adding specialization %d: %v", specID, err)
+				log.Printf("Error checking specialization %d: %v", specID, err)
+				continue
+			}
+
+			if exists {
+				// Добавляем связь врач-специализация
+				_, err = h.db.GetDB().Exec(
+					"INSERT INTO vet_specializations (vet_id, specialization_id) VALUES ($1, $2)",
+					vet.ID, specID,
+				)
+				if err != nil {
+					log.Printf("Error adding specialization %d: %v", specID, err)
+				} else {
+					log.Printf("Successfully added specialization %d for vet %d", specID, vet.ID)
+				}
+			} else {
+				log.Printf("Specialization %d does not exist", specID)
 			}
 		}
 	}
@@ -288,6 +414,35 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 			}
 			sb.WriteString("\n")
 		}
+	}
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// showClinicList показывает список клиник
+func (h *AdminHandlers) showClinicList(update tgbotapi.Update) {
+	clinics, err := h.db.GetAllClinics()
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении клиник")
+		h.bot.Send(msg)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🏥 *Список клиник:*\n\n")
+
+	for i, clinic := range clinics {
+		sb.WriteString(fmt.Sprintf("%d. *%s*\n", i+1, clinic.Name))
+		sb.WriteString(fmt.Sprintf("   Адрес: %s\n", clinic.Address))
+		if clinic.Phone.Valid {
+			sb.WriteString(fmt.Sprintf("   Телефон: %s\n", clinic.Phone.String))
+		}
+		if clinic.WorkingHours.Valid {
+			sb.WriteString(fmt.Sprintf("   Часы работы: %s\n", clinic.WorkingHours.String))
+		}
+		sb.WriteString("\n")
 	}
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
