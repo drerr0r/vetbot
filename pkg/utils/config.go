@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -22,14 +23,20 @@ func LoadConfig() (*Config, error) {
 	// Токен Telegram бота (обязательный параметр)
 	config.TelegramToken = getEnv("TELEGRAM_TOKEN", "")
 	if config.TelegramToken == "" {
-		log.Fatal("TELEGRAM_TOKEN is required")
+		return nil, fmt.Errorf("TELEGRAM_TOKEN is required")
 	}
-	log.Printf("Telegram token loaded: %s...", config.TelegramToken[:10])
+
+	// Безопасное логирование токена
+	tokenPreview := config.TelegramToken
+	if len(tokenPreview) > 10 {
+		tokenPreview = tokenPreview[:10] + "..."
+	}
+	log.Printf("Telegram token loaded: %s", tokenPreview)
 
 	// URL базы данных (обязательный параметр)
 	config.DatabaseURL = getEnv("DATABASE_URL", "")
 	if config.DatabaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
+		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 	log.Printf("Database URL loaded: %s", config.DatabaseURL)
 

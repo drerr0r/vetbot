@@ -52,14 +52,39 @@ make compose-up
 📁 Структура проекта
 text
 vetbot/
-├── cmd/vetbot/          # Точка входа
-├── internal/            # Внутренние пакеты
-│   ├── database/        # Работа с БД
-│   ├── handlers/        # Обработчики Telegram
-│   └── models/          # Модели данных
-├── migrations/          # Миграции БД
-├── pkg/utils/          # Утилиты
-└── scripts/            # Скрипты развертывания
+├── .env.example
+├── .gitignore
+├── Dockerfile
+├── Makefile
+├── README.md
+├── docker-compose.windows.yml
+├── docker-compose.yml
+├── go.mod
+├── go.sum
+├── setup.bat
+├── cmd/
+│   └── vetbot/
+│       └── main.go
+├── internal/
+│   ├── database/
+│   │   └── database.go
+│   ├── handlers/
+│   │   ├── admin_handlers.go
+│   │   ├── bot_handlers.go
+│   │   ├── main_handler.go
+│   │   └── vet_handlers.go
+│   └── models/
+│       └── models.go
+├── migrations/
+│   └── 001_init.sql
+├── pkg/
+│   └── utils/
+│       └── config.go
+└── scripts/
+    ├── apply_migrations.sh
+    ├── deploy.sh
+    ├── setup.sh
+    └── setup_windows.ps1
 ⚙️ Конфигурация
 Создайте файл .env:
 

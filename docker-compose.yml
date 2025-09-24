@@ -26,7 +26,7 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - DATABASE_URL=postgres://vetbot_user:vetbot_password@postgres:5432/vetbot?sslmode=disable
       - DEBUG=${DEBUG}
-      - ADMIN_IDS=${ADMIN_IDS}
+      - ADMIN_IDS=${ADMIN_IDS}  # Теперь содержит оба ID: 392746823,5144454774
     depends_on:
       postgres:
         condition: service_healthy
