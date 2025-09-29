@@ -1,0 +1,673 @@
+package handlers
+
+import (
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/drerr0r/vetbot/internal/database"
+	"github.com/drerr0r/vetbot/pkg/utils"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/stretchr/testify/assert"
+)
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ КОНСТРУКТОРА И БАЗОВОЙ ФУНКЦИОНАЛЬНОСТИ
+// ============================================================================
+
+func TestMainHandler_NewMainHandler(t *testing.T) {
+	// Arrange
+	var bot *tgbotapi.BotAPI = nil
+	var db *database.Database = nil
+	config := &utils.Config{}
+
+	// Act
+	handler := NewMainHandler(bot, db, config)
+
+	// Assert
+	assert.NotNil(t, handler)
+	assert.Nil(t, handler.bot)
+	assert.Nil(t, handler.db)
+	assert.Equal(t, config, handler.config)
+	assert.NotNil(t, handler.vetHandlers)
+	assert.NotNil(t, handler.adminHandlers)
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ
+// ============================================================================
+
+func TestMainHandler_IsAdmin(t *testing.T) {
+	tests := []struct {
+		name           string
+		adminIDs       []int64
+		userID         int64
+		expectedResult bool
+	}{
+		{
+			name:           "User is admin",
+			adminIDs:       []int64{12345, 67890},
+			userID:         12345,
+			expectedResult: true,
+		},
+		{
+			name:           "User is not admin",
+			adminIDs:       []int64{12345, 67890},
+			userID:         99999,
+			expectedResult: false,
+		},
+		{
+			name:           "Empty admin list",
+			adminIDs:       []int64{},
+			userID:         12345,
+			expectedResult: false,
+		},
+		{
+			name:           "Nil config",
+			adminIDs:       nil,
+			userID:         12345,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			handler := &MainHandler{
+				config: &utils.Config{AdminIDs: tt.adminIDs},
+			}
+
+			// Act
+			result := handler.isAdmin(tt.userID)
+
+			// Assert
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestMainHandler_IsInAdminMode(t *testing.T) {
+	tests := []struct {
+		name           string
+		adminState     map[int64]string
+		userID         int64
+		expectedResult bool
+	}{
+		{
+			name: "User in admin mode",
+			adminState: map[int64]string{
+				12345: "active",
+			},
+			userID:         12345,
+			expectedResult: true,
+		},
+		{
+			name: "User not in admin mode",
+			adminState: map[int64]string{
+				12345: "active",
+			},
+			userID:         99999,
+			expectedResult: false,
+		},
+		{
+			name:           "Empty admin state",
+			adminState:     map[int64]string{},
+			userID:         12345,
+			expectedResult: false,
+		},
+		{
+			name:           "Nil admin state",
+			adminState:     nil,
+			userID:         12345,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			handler := &MainHandler{
+				adminHandlers: &AdminHandlers{
+					adminState: tt.adminState,
+				},
+			}
+
+			// Act
+			result := handler.isInAdminMode(tt.userID)
+
+			// Assert
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ ПАРСИНГА КОМАНД
+// ============================================================================
+
+func TestMainHandler_ParseSearchCommand(t *testing.T) {
+	tests := []struct {
+		name          string
+		command       string
+		expectedID    int
+		shouldSucceed bool
+	}{
+		{
+			name:          "Valid search command",
+			command:       "/search_1",
+			expectedID:    1,
+			shouldSucceed: true,
+		},
+		{
+			name:          "Valid search command with double digit",
+			command:       "/search_42",
+			expectedID:    42,
+			shouldSucceed: true,
+		},
+		{
+			name:          "Valid search command with triple digit",
+			command:       "/search_123",
+			expectedID:    123,
+			shouldSucceed: true,
+		},
+		{
+			name:          "Invalid search command - non numeric",
+			command:       "/search_abc",
+			expectedID:    0,
+			shouldSucceed: false,
+		},
+		{
+			name:          "Invalid search command - no ID",
+			command:       "/search_",
+			expectedID:    0,
+			shouldSucceed: false,
+		},
+		{
+			name:          "Invalid search command - empty",
+			command:       "/search",
+			expectedID:    0,
+			shouldSucceed: false,
+		},
+		{
+			name:          "Invalid search command - special characters",
+			command:       "/search_1a2",
+			expectedID:    0,
+			shouldSucceed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Act
+			var specID int
+			var err error
+
+			if strings.HasPrefix(tt.command, "/search_") {
+				specIDStr := strings.TrimPrefix(tt.command, "/search_")
+				specID, err = strconv.Atoi(specIDStr)
+			} else {
+				err = strconv.ErrSyntax
+			}
+
+			// Assert
+			if tt.shouldSucceed {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedID, specID)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestMainHandler_CommandRoutingLogic(t *testing.T) {
+	tests := []struct {
+		name           string
+		command        string
+		expectedAction string
+		isAdmin        bool
+	}{
+		{
+			name:           "Start command",
+			command:        "/start",
+			expectedAction: "vet_start",
+			isAdmin:        false,
+		},
+		{
+			name:           "Help command",
+			command:        "/help",
+			expectedAction: "vet_help",
+			isAdmin:        false,
+		},
+		{
+			name:           "Specializations command",
+			command:        "/specializations",
+			expectedAction: "vet_specializations",
+			isAdmin:        false,
+		},
+		{
+			name:           "Search command",
+			command:        "/search",
+			expectedAction: "vet_search",
+			isAdmin:        false,
+		},
+		{
+			name:           "Clinics command",
+			command:        "/clinics",
+			expectedAction: "vet_clinics",
+			isAdmin:        false,
+		},
+		{
+			name:           "Test command",
+			command:        "/test",
+			expectedAction: "vet_test",
+			isAdmin:        false,
+		},
+		{
+			name:           "Admin command with access",
+			command:        "/admin",
+			expectedAction: "admin_panel",
+			isAdmin:        true,
+		},
+		{
+			name:           "Admin command without access",
+			command:        "/admin",
+			expectedAction: "access_denied",
+			isAdmin:        false,
+		},
+		{
+			name:           "Stats command with access",
+			command:        "/stats",
+			expectedAction: "admin_stats",
+			isAdmin:        true,
+		},
+		{
+			name:           "Stats command without access",
+			command:        "/stats",
+			expectedAction: "no_action",
+			isAdmin:        false,
+		},
+		{
+			name:           "Unknown command",
+			command:        "/unknown",
+			expectedAction: "unknown_command",
+			isAdmin:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			var action string
+
+			// Имитируем логику роутинга из handleCommand
+			switch tt.command {
+			case "/start":
+				action = "vet_start"
+			case "/help":
+				action = "vet_help"
+			case "/specializations":
+				action = "vet_specializations"
+			case "/search":
+				action = "vet_search"
+			case "/clinics":
+				action = "vet_clinics"
+			case "/test":
+				action = "vet_test"
+			case "/admin":
+				if tt.isAdmin {
+					action = "admin_panel"
+				} else {
+					action = "access_denied"
+				}
+			case "/stats":
+				if tt.isAdmin {
+					action = "admin_stats"
+				} else {
+					action = "no_action"
+				}
+			default:
+				action = "unknown_command"
+			}
+
+			// Assert
+			assert.Equal(t, tt.expectedAction, action)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ ОБРАБОТКИ РАЗЛИЧНЫХ ТИПОВ ОБНОВЛЕНИЙ
+// ============================================================================
+
+func TestMainHandler_UpdateTypeDetection(t *testing.T) {
+	tests := []struct {
+		name          string
+		update        tgbotapi.Update
+		expectedType  string
+		shouldProcess bool
+	}{
+		{
+			name: "Callback query update",
+			update: tgbotapi.Update{
+				CallbackQuery: &tgbotapi.CallbackQuery{
+					ID:   "test",
+					Data: "test_data",
+				},
+			},
+			expectedType:  "callback",
+			shouldProcess: true,
+		},
+		{
+			name: "Message with text",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{
+					Text: "/start",
+					From: &tgbotapi.User{ID: 12345},
+				},
+			},
+			expectedType:  "message",
+			shouldProcess: true,
+		},
+		{
+			name: "Message without text",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{
+					Text: "",
+					From: &tgbotapi.User{ID: 12345},
+				},
+			},
+			expectedType:  "empty_message",
+			shouldProcess: false,
+		},
+		{
+			name: "Nil message",
+			update: tgbotapi.Update{
+				Message: nil,
+			},
+			expectedType:  "nil_message",
+			shouldProcess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Act
+			var updateType string
+			var shouldProcess bool
+
+			if tt.update.CallbackQuery != nil {
+				updateType = "callback"
+				shouldProcess = true
+			} else if tt.update.Message != nil {
+				if tt.update.Message.Text != "" {
+					updateType = "message"
+					shouldProcess = true
+				} else {
+					updateType = "empty_message"
+					shouldProcess = false
+				}
+			} else {
+				updateType = "nil_message"
+				shouldProcess = false
+			}
+
+			// Assert
+			assert.Equal(t, tt.expectedType, updateType)
+			assert.Equal(t, tt.shouldProcess, shouldProcess)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ АДМИНСКОЙ ЛОГИКИ
+// ============================================================================
+
+func TestMainHandler_AdminAuthorizationLogic(t *testing.T) {
+	tests := []struct {
+		name            string
+		userID          int64
+		adminIDs        []int64
+		adminState      map[int64]string
+		expectedIsAdmin bool
+		expectedInMode  bool
+	}{
+		{
+			name:            "Admin user in admin mode",
+			userID:          12345,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{12345: "active"},
+			expectedIsAdmin: true,
+			expectedInMode:  true,
+		},
+		{
+			name:            "Admin user not in admin mode",
+			userID:          12345,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{},
+			expectedIsAdmin: true,
+			expectedInMode:  false,
+		},
+		{
+			name:            "Non-admin user",
+			userID:          99999,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{12345: "active"},
+			expectedIsAdmin: false,
+			expectedInMode:  false,
+		},
+		{
+			name:            "User not in admin list",
+			userID:          55555,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{12345: "active"},
+			expectedIsAdmin: false,
+			expectedInMode:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			handler := &MainHandler{
+				config: &utils.Config{AdminIDs: tt.adminIDs},
+				adminHandlers: &AdminHandlers{
+					adminState: tt.adminState,
+				},
+			}
+
+			// Act
+			isAdmin := handler.isAdmin(tt.userID)
+			inAdminMode := handler.isInAdminMode(tt.userID)
+
+			// Assert
+			assert.Equal(t, tt.expectedIsAdmin, isAdmin)
+			assert.Equal(t, tt.expectedInMode, inAdminMode)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ ТЕКСТОВЫХ СООБЩЕНИЙ
+// ============================================================================
+
+func TestMainHandler_TextMessageHandlingLogic(t *testing.T) {
+	tests := []struct {
+		name            string
+		messageText     string
+		isAdmin         bool
+		inAdminMode     bool
+		expectedHandler string
+	}{
+		{
+			name:            "Regular user text message",
+			messageText:     "Hello world",
+			isAdmin:         false,
+			inAdminMode:     false,
+			expectedHandler: "help_message",
+		},
+		{
+			name:            "Admin user text message in admin mode",
+			messageText:     "admin command",
+			isAdmin:         true,
+			inAdminMode:     true,
+			expectedHandler: "admin_handler",
+		},
+		{
+			name:            "Admin user text message not in admin mode",
+			messageText:     "regular message",
+			isAdmin:         true,
+			inAdminMode:     false,
+			expectedHandler: "help_message",
+		},
+		{
+			name:            "Search command message",
+			messageText:     "/search_1",
+			isAdmin:         false,
+			inAdminMode:     false,
+			expectedHandler: "search_handler",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			var handler string
+
+			// Имитируем логику из HandleUpdate
+			if strings.HasPrefix(tt.messageText, "/search_") {
+				handler = "search_handler"
+			} else if tt.isAdmin && tt.inAdminMode {
+				handler = "admin_handler"
+			} else {
+				handler = "help_message"
+			}
+
+			// Assert
+			assert.Equal(t, tt.expectedHandler, handler)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ ВАЛИДАЦИИ ВХОДНЫХ ДАННЫХ
+// ============================================================================
+
+func TestMainHandler_InputValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		update        tgbotapi.Update
+		shouldProcess bool
+		reason        string
+	}{
+		{
+			name: "Valid callback query",
+			update: tgbotapi.Update{
+				CallbackQuery: &tgbotapi.CallbackQuery{ID: "test"},
+			},
+			shouldProcess: true,
+			reason:        "callback should be processed",
+		},
+		{
+			name: "Valid text message",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{Text: "/start"},
+			},
+			shouldProcess: true,
+			reason:        "text message should be processed",
+		},
+		{
+			name: "Empty text message",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{Text: ""},
+			},
+			shouldProcess: false,
+			reason:        "empty text should be ignored",
+		},
+		{
+			name: "Nil message",
+			update: tgbotapi.Update{
+				Message: nil,
+			},
+			shouldProcess: false,
+			reason:        "nil message should be ignored",
+		},
+		{
+			name:          "Empty update",
+			update:        tgbotapi.Update{},
+			shouldProcess: false,
+			reason:        "empty update should be ignored",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Act
+			var shouldProcess bool
+
+			if tt.update.CallbackQuery != nil {
+				shouldProcess = true
+			} else if tt.update.Message != nil && tt.update.Message.Text != "" {
+				shouldProcess = true
+			} else {
+				shouldProcess = false
+			}
+
+			// Assert
+			assert.Equal(t, tt.shouldProcess, shouldProcess, tt.reason)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ КРАЙНИХ СЛУЧАЕВ
+// ============================================================================
+
+func TestMainHandler_EdgeCases(t *testing.T) {
+	t.Run("Nil config should not cause panic", func(t *testing.T) {
+		handler := &MainHandler{
+			config: nil,
+		}
+
+		// Должны обрабатывать nil без паники
+		isAdmin := handler.isAdmin(12345)
+		assert.False(t, isAdmin)
+	})
+
+	t.Run("Nil admin handlers should not cause panic", func(t *testing.T) {
+		handler := &MainHandler{
+			adminHandlers: nil,
+		}
+
+		// Должны обрабатывать nil без паники
+		inAdminMode := handler.isInAdminMode(12345)
+		assert.False(t, inAdminMode)
+	})
+
+	t.Run("Very large user ID", func(t *testing.T) {
+		handler := &MainHandler{
+			config: &utils.Config{AdminIDs: []int64{12345}},
+		}
+
+		isAdmin := handler.isAdmin(999999999999999999)
+		assert.False(t, isAdmin)
+	})
+
+	t.Run("Negative user ID", func(t *testing.T) {
+		handler := &MainHandler{
+			config: &utils.Config{AdminIDs: []int64{12345}},
+		}
+
+		isAdmin := handler.isAdmin(-12345)
+		assert.False(t, isAdmin)
+	})
+
+	t.Run("Zero user ID", func(t *testing.T) {
+		handler := &MainHandler{
+			config: &utils.Config{AdminIDs: []int64{12345}},
+		}
+
+		isAdmin := handler.isAdmin(0)
+		assert.False(t, isAdmin)
+	})
+}

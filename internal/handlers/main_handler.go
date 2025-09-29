@@ -177,6 +177,12 @@ func (h *MainHandler) isAdmin(userID int64) bool {
 
 // isInAdminMode проверяет, находится ли пользователь в админском режиме
 func (h *MainHandler) isInAdminMode(userID int64) bool {
+	// Защита от nil указателя
+	if h.adminHandlers == nil {
+		log.Printf("Admin handlers is nil for user %d", userID)
+		return false
+	}
+
 	// Проверяем состояние админской сессии
 	if state, exists := h.adminHandlers.adminState[userID]; exists {
 		return state != ""
