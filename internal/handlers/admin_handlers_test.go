@@ -6,8 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/drerr0r/vetbot/internal/database"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/drerr0r/vetbot/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,22 +14,42 @@ import (
 // ТЕСТЫ ДЛЯ КОНСТРУКТОРА И БАЗОВОЙ ФУНКЦИОНАЛЬНОСТИ
 // ============================================================================
 
-func TestAdminHandlers_NewAdminHandlers(t *testing.T) {
+func TestNewAdminHandlers(t *testing.T) {
 	// Arrange
-	var bot *tgbotapi.BotAPI = nil
-	var db *database.Database = nil
+	mockBot := NewMockBot()
+	mockDB := NewMockDatabase()
+	config := &utils.Config{AdminIDs: []int64{12345}}
 
 	// Act
-	handler := NewAdminHandlers(bot, db)
+	handler := NewAdminHandlers(mockBot, mockDB, config)
 
 	// Assert
 	assert.NotNil(t, handler)
-	assert.Nil(t, handler.bot)
-	assert.Nil(t, handler.db)
+	assert.Equal(t, mockBot, handler.bot)
+	assert.Equal(t, mockDB, handler.db)
+	assert.Equal(t, config, handler.config)
 	assert.NotNil(t, handler.adminState)
-	assert.NotNil(t, handler.tempData)
-	assert.Empty(t, handler.adminState)
-	assert.Empty(t, handler.tempData)
+	assert.NotNil(t, handler.tempData) // Проверяем новое поле
+}
+
+func TestAdminHandlersTempData(t *testing.T) {
+	// Arrange
+	mockBot := NewMockBot()
+	mockDB := NewMockDatabase()
+	config := &utils.Config{AdminIDs: []int64{12345}}
+	handler := NewAdminHandlers(mockBot, mockDB, config)
+
+	// Act & Assert - проверяем что tempData работает
+	handler.tempData["test_key"] = "test_value"
+	value, exists := handler.tempData["test_key"]
+
+	assert.True(t, exists)
+	assert.Equal(t, "test_value", value)
+
+	// Проверяем удаление
+	delete(handler.tempData, "test_key")
+	_, exists = handler.tempData["test_key"]
+	assert.False(t, exists)
 }
 
 // ============================================================================

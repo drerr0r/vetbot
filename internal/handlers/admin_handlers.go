@@ -7,26 +7,28 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/internal/models"
+	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // AdminHandlers содержит обработчики для административных функций
 type AdminHandlers struct {
-	bot        *tgbotapi.BotAPI
-	db         *database.Database
-	adminState map[int64]string       // Хранит состояние админской сессии
-	tempData   map[string]interface{} // Хранит временные данные
+	bot        BotAPI   // Используем интерфейс
+	db         Database // Используем интерфейс
+	config     *utils.Config
+	adminState map[int64]string
+	tempData   map[string]interface{} // Добавляем недостающее поле
 }
 
 // NewAdminHandlers создает новый экземпляр AdminHandlers
-func NewAdminHandlers(bot *tgbotapi.BotAPI, db *database.Database) *AdminHandlers {
+func NewAdminHandlers(bot BotAPI, db Database, config *utils.Config) *AdminHandlers {
 	return &AdminHandlers{
 		bot:        bot,
 		db:         db,
+		config:     config,
 		adminState: make(map[int64]string),
-		tempData:   make(map[string]interface{}),
+		tempData:   make(map[string]interface{}), // Инициализируем
 	}
 }
 

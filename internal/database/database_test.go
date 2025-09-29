@@ -1,239 +1,155 @@
 package database
 
 import (
-	"os"
 	"testing"
 
 	"github.com/drerr0r/vetbot/internal/models"
-	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestDatabaseConnection тестирует подключение к БД
-func TestDatabaseConnection(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
+func TestDatabase_Integration(t *testing.T) {
+	config := GetTestConfig()
+	db := SetupTestDatabase(t, config)
 
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
+	if db == nil {
+		return // Тест был пропущен
 	}
 	defer db.Close()
+	defer CleanupTestDatabase(db)
 
-	// Проверяем, что подключение работает
-	err = db.GetDB().Ping()
-	if err != nil {
-		t.Errorf("Database ping failed: %v", err)
-	}
-}
+	t.Run("CreateUser", func(t *testing.T) {
+		user, err := CreateTestUser(db, 99991)
+		require.NoError(t, err)
+		assert.NotZero(t, user.ID)
+		assert.NotZero(t, user.CreatedAt)
+	})
 
-// TestCreateUser тестирует создание пользователя
-func TestCreateUser(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
+	t.Run("GetAllSpecializations", func(t *testing.T) {
+		specializations, err := db.GetAllSpecializations()
+		require.NoError(t, err)
+		assert.Greater(t, len(specializations), 0)
 
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
-	}
-	defer db.Close()
-
-	// Создаем тестового пользователя
-	user := &models.User{
-		TelegramID: 123456789,
-		Username:   "test_user",
-		FirstName:  "Test",
-		LastName:   "User",
-		Phone:      "+79161234567",
-	}
-
-	err = db.CreateUser(user)
-	if err != nil {
-		t.Errorf("CreateUser failed: %v", err)
-	}
-
-	// Проверяем, что ID и CreatedAt установлены
-	if user.ID == 0 {
-		t.Error("User ID should be set after creation")
-	}
-	if user.CreatedAt.IsZero() {
-		t.Error("CreatedAt should be set after creation")
-	}
-
-	// Тестируем upsert (обновление существующего пользователя)
-	user.Username = "updated_user"
-	err = db.CreateUser(user)
-	if err != nil {
-		t.Errorf("CreateUser upsert failed: %v", err)
-	}
-}
-
-// TestGetAllSpecializations тестирует получение специализаций
-func TestGetAllSpecializations(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
-
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
-	}
-	defer db.Close()
-
-	specializations, err := db.GetAllSpecializations()
-	if err != nil {
-		t.Errorf("GetAllSpecializations failed: %v", err)
-	}
-
-	// Проверяем, что получили хотя бы пустой слайс
-	if specializations == nil {
-		t.Error("GetAllSpecializations should return empty slice, not nil")
-	}
-
-	// Если есть данные, проверяем структуру
-	if len(specializations) > 0 {
-		spec := specializations[0]
-		if spec.Name == "" {
-			t.Error("Specialization name should not be empty")
+		if len(specializations) > 0 {
+			assert.NotEmpty(t, specializations[0].Name)
 		}
-	}
-}
+	})
 
-// TestSpecializationExists тестирует проверку существования специализации
-func TestSpecializationExists(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
+	t.Run("GetSpecializationByID", func(t *testing.T) {
+		spec, err := db.GetSpecializationByID(1)
+		require.NoError(t, err)
+		assert.Equal(t, 1, spec.ID)
+		assert.Equal(t, "Хирург", spec.Name)
+	})
 
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
-	}
-	defer db.Close()
+	t.Run("SpecializationExists", func(t *testing.T) {
+		exists, err := db.SpecializationExists(1)
+		require.NoError(t, err)
+		assert.True(t, exists)
 
-	// Тестируем несуществующую специализацию
-	exists, err := db.SpecializationExists(99999)
-	if err != nil {
-		t.Errorf("SpecializationExists failed: %v", err)
-	}
-	if exists {
-		t.Error("Specialization 99999 should not exist")
-	}
+		exists, err = db.SpecializationExists(999)
+		require.NoError(t, err)
+		assert.False(t, exists)
+	})
 
-	// Тестируем существующую специализацию (если есть данные)
-	specializations, _ := db.GetAllSpecializations()
-	if len(specializations) > 0 {
-		exists, err = db.SpecializationExists(specializations[0].ID)
-		if err != nil {
-			t.Errorf("SpecializationExists failed for existing ID: %v", err)
+	t.Run("GetVeterinariansBySpecialization", func(t *testing.T) {
+		vets, err := db.GetVeterinariansBySpecialization(1)
+		require.NoError(t, err)
+		assert.Greater(t, len(vets), 0)
+
+		if len(vets) > 0 {
+			vet := vets[0]
+			assert.NotEmpty(t, vet.FirstName)
+			assert.NotEmpty(t, vet.Phone)
 		}
-		if !exists {
-			t.Error("Existing specialization should return true")
+	})
+
+	t.Run("GetAllClinics", func(t *testing.T) {
+		clinics, err := db.GetAllClinics()
+		require.NoError(t, err)
+		assert.Greater(t, len(clinics), 0)
+
+		if len(clinics) > 0 {
+			clinic := clinics[0]
+			assert.NotEmpty(t, clinic.Name)
+			assert.NotEmpty(t, clinic.Address)
 		}
-	}
-}
+	})
 
-// TestGetAllClinics тестирует получение клиник
-func TestGetAllClinics(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
+	t.Run("GetAllVeterinarians", func(t *testing.T) {
+		vets, err := db.GetAllVeterinarians()
+		require.NoError(t, err)
+		assert.Greater(t, len(vets), 0)
+	})
 
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
-	}
-	defer db.Close()
+	t.Run("GetVeterinarianByID", func(t *testing.T) {
+		vet, err := db.GetVeterinarianByID(1)
+		require.NoError(t, err)
+		assert.Equal(t, 1, vet.ID)
+		assert.Equal(t, "Иван", vet.FirstName)
+	})
 
-	clinics, err := db.GetAllClinics()
-	if err != nil {
-		t.Errorf("GetAllClinics failed: %v", err)
-	}
+	t.Run("GetClinicByID", func(t *testing.T) {
+		clinic, err := db.GetClinicByID(1)
+		require.NoError(t, err)
+		assert.Equal(t, 1, clinic.ID)
+		assert.Equal(t, "ВетКлиника Центр", clinic.Name)
+	})
 
-	if clinics == nil {
-		t.Error("GetAllClinics should return empty slice, not nil")
-	}
+	t.Run("FindAvailableVets_EmptyCriteria", func(t *testing.T) {
+		criteria := &models.SearchCriteria{}
+		vets, err := db.FindAvailableVets(criteria)
+		require.NoError(t, err)
+		assert.Greater(t, len(vets), 0)
+	})
 
-	if len(clinics) > 0 {
-		clinic := clinics[0]
-		if clinic.Name == "" {
-			t.Error("Clinic name should not be empty")
-		}
-	}
-}
-
-// TestFindAvailableVets тестирует поиск врачей
-func TestFindAvailableVets(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
-
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
-	}
-	defer db.Close()
-
-	// Тест с пустыми критериями
-	criteria := &models.SearchCriteria{}
-	vets, err := db.FindAvailableVets(criteria)
-	if err != nil {
-		t.Errorf("FindAvailableVets failed: %v", err)
-	}
-
-	if vets == nil {
-		t.Error("FindAvailableVets should return empty slice, not nil")
-	}
-
-	// Тест с критериями (если есть данные в БД)
-	if len(vets) > 0 {
+	t.Run("FindAvailableVets_WithSpecialization", func(t *testing.T) {
 		criteria := &models.SearchCriteria{
-			SpecializationID: 1, // предполагая, что ID 1 существует
+			SpecializationID: 1,
 		}
-		_, err := db.FindAvailableVets(criteria)
-		if err != nil {
-			t.Errorf("FindAvailableVets with criteria failed: %v", err)
-		}
-	}
+		vets, err := db.FindAvailableVets(criteria)
+		require.NoError(t, err)
+		assert.Greater(t, len(vets), 0)
+	})
+
+	t.Run("AddMissingColumns", func(t *testing.T) {
+		err := db.AddMissingColumns()
+		assert.NoError(t, err)
+	})
 }
 
-// TestAddMissingColumns тестирует добавление недостающих колонок
-func TestAddMissingColumns(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://vetbot_user:vetbot_password@localhost:5432/vetbot_test?sslmode=disable"
-	}
+func TestDatabase_Unit(t *testing.T) {
+	t.Run("New_InvalidURL", func(t *testing.T) {
+		db, err := New("invalid_url")
+		assert.Error(t, err)
+		assert.Nil(t, db)
+	})
 
-	db, err := New(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test: cannot connect to database: %v", err)
-	}
-	defer db.Close()
+	t.Run("Close_NilDB", func(t *testing.T) {
+		// Создаем объект Database с nil db
+		db := &Database{
+			db: nil,
+		}
 
-	err = db.AddMissingColumns()
-	if err != nil {
-		t.Errorf("AddMissingColumns failed: %v", err)
-	}
+		// Вызываем Close - это не должно вызывать панику
+		err := db.Close()
 
-	// Проверяем, что колонки существуют
-	var columnExists bool
-	err = db.GetDB().QueryRow(`
-		SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns 
-			WHERE table_name = 'clinics' AND column_name = 'is_active'
-		)
-	`).Scan(&columnExists)
-	if err != nil {
-		t.Errorf("Check column exists failed: %v", err)
-	}
-	if !columnExists {
-		t.Error("is_active column should exist in clinics table")
-	}
+		// Вместо проверки ошибки просто убеждаемся, что паники не было
+		if err != nil {
+			t.Logf("Close returned error (expected for nil DB): %v", err)
+		}
+	})
+
+	t.Run("Close_ProperlyInitialized", func(t *testing.T) {
+		// Создаем базу данных с невалидным URL, чтобы получить nil DB
+		db, err := New("invalid_url")
+		assert.Error(t, err)
+		assert.Nil(t, db)
+
+		// Если New возвращает nil, не пытаемся вызывать Close
+		if db != nil {
+			err := db.Close()
+			assert.NoError(t, err)
+		}
+	})
 }

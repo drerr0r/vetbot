@@ -31,6 +31,9 @@ func New(dataSourceName string) (*Database, error) {
 
 // Close закрывает подключение к базе данных
 func (d *Database) Close() error {
+	if d == nil || d.db == nil {
+		return nil // Безопасно возвращаем nil для nil объекта
+	}
 	return d.db.Close()
 }
 

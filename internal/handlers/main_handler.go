@@ -5,28 +5,27 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// MainHandler обрабатывает все входящие сообщения
+// MainHandler обрабатывает все входящие обновления
 type MainHandler struct {
-	bot           *tgbotapi.BotAPI
-	db            *database.Database
+	bot           BotAPI   // Используем интерфейс
+	db            Database // Используем интерфейс
+	config        *utils.Config
 	vetHandlers   *VetHandlers
 	adminHandlers *AdminHandlers
-	config        *utils.Config
 }
 
 // NewMainHandler создает новый экземпляр MainHandler
-func NewMainHandler(bot *tgbotapi.BotAPI, db *database.Database, config *utils.Config) *MainHandler {
+func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler {
 	return &MainHandler{
 		bot:           bot,
 		db:            db,
-		vetHandlers:   NewVetHandlers(bot, db),
-		adminHandlers: NewAdminHandlers(bot, db),
 		config:        config,
+		vetHandlers:   NewVetHandlers(bot, db),
+		adminHandlers: NewAdminHandlers(bot, db, config), // Исправлено количество аргументов
 	}
 }
 

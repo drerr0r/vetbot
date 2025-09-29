@@ -7,19 +7,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/internal/models"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // VetHandlers содержит обработчики для ветеринарного бота
 type VetHandlers struct {
-	bot *tgbotapi.BotAPI
-	db  *database.Database
+	bot BotAPI
+	db  Database
 }
 
 // NewVetHandlers создает новый экземпляр VetHandlers
-func NewVetHandlers(bot *tgbotapi.BotAPI, db *database.Database) *VetHandlers {
+func NewVetHandlers(bot BotAPI, db Database) *VetHandlers {
 	return &VetHandlers{
 		bot: bot,
 		db:  db,
