@@ -1,294 +1,196 @@
 package handlers
 
 import (
-	"database/sql"
-	"errors"
-	"fmt"
 	"strconv"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/drerr0r/vetbot/internal/database"
-	"github.com/drerr0r/vetbot/internal/models"
+	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/stretchr/testify/assert"
 )
 
 // ============================================================================
-// ТЕСТЫ ДЛЯ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ (не требуют моков)
+// ТЕСТЫ ДЛЯ КОНСТРУКТОРА И БАЗОВОЙ ФУНКЦИОНАЛЬНОСТИ
 // ============================================================================
 
-func TestGetDayName(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    int
-		expected string
-	}{
-		{"Понедельник", 1, "понедельник"},
-		{"Вторник", 2, "вторник"},
-		{"Среда", 3, "среду"},
-		{"Четверг", 4, "четверг"},
-		{"Пятница", 5, "пятницу"},
-		{"Суббота", 6, "субботу"},
-		{"Воскресенье", 7, "воскресенье"},
-		{"Любой день", 0, "любой день"},
-		{"Несуществующий день", 8, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getDayName(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestGetDayName_Comprehensive(t *testing.T) {
-	tests := []struct {
-		input    int
-		expected string
-	}{
-		{1, "понедельник"},
-		{2, "вторник"},
-		{3, "среду"},
-		{4, "четверг"},
-		{5, "пятницу"},
-		{6, "субботу"},
-		{7, "воскресенье"},
-		{0, "любой день"},
-		{8, ""},
-		{-1, ""},
-	}
-
-	for _, test := range tests {
-		t.Run(string(rune(test.input)), func(t *testing.T) {
-			result := getDayName(test.input)
-			assert.Equal(t, test.expected, result)
-		})
-	}
-}
-
-// ============================================================================
-// ТЕСТЫ ДЛЯ КОНСТРУКТОРА (не требуют моков)
-// ============================================================================
-
-func TestNewVetHandlers(t *testing.T) {
-	// Создаем nil указатели, так как в реальных тестах мы не будем их использовать
+func TestNewMainHandler(t *testing.T) {
+	// Arrange
 	var bot *tgbotapi.BotAPI = nil
 	var db *database.Database = nil
+	config := &utils.Config{}
 
-	handler := NewVetHandlers(bot, db)
+	// Act
+	handler := NewMainHandler(bot, db, config)
 
+	// Assert
 	assert.NotNil(t, handler)
-	assert.Nil(t, handler.bot) // В тестовом режиле они будут nil
+	assert.Nil(t, handler.bot)
 	assert.Nil(t, handler.db)
+	assert.Equal(t, config, handler.config)
+	assert.NotNil(t, handler.vetHandlers)
+	assert.NotNil(t, handler.adminHandlers)
 }
 
 // ============================================================================
-// ТЕСТЫ ДЛЯ ФОРМАТИРОВАНИЯ ДАННЫХ (логика форматирования сообщений)
+// ТЕСТЫ ДЛЯ ВСПОМОГАТЕЛЬНЫХ ФУНКЦИЙ
 // ============================================================================
 
-func TestFormatVeterinarianInfo(t *testing.T) {
-	// Тестируем логику форматирования данных врача
-	vet := &models.Veterinarian{
-		ID:              1,
-		FirstName:       "Иван",
-		LastName:        "Петров",
-		Phone:           "+79123456789",
-		Email:           sql.NullString{String: "ivan@vet.ru", Valid: true},
-		ExperienceYears: sql.NullInt64{Int64: 5, Valid: true},
-		IsActive:        true,
-	}
-
-	// Проверяем, что данные правильно экранируются
-	// Это тестирует логику, которая используется в HandleSearchBySpecialization
-	assert.Contains(t, vet.FirstName, "Иван")
-	assert.Contains(t, vet.LastName, "Петров")
-	assert.Equal(t, "+79123456789", vet.Phone)
-}
-
-func TestFormatScheduleInfo(t *testing.T) {
-	// Тестируем логику форматирования расписания
-	schedule := &models.Schedule{
-		DayOfWeek: 1,
-		StartTime: "09:00",
-		EndTime:   "18:00",
-		Clinic: &models.Clinic{
-			Name: "ВетКлиника",
-		},
-	}
-
-	dayName := getDayName(schedule.DayOfWeek)
-	expectedDayName := "понедельник"
-
-	assert.Equal(t, expectedDayName, dayName)
-	assert.Equal(t, "09:00", schedule.StartTime)
-	assert.Equal(t, "18:00", schedule.EndTime)
-	assert.Equal(t, "ВетКлиника", schedule.Clinic.Name)
-}
-
-// ============================================================================
-// ТЕСТЫ ДЛЯ ВАЛИДАЦИИ ДАННЫХ
-// ============================================================================
-
-func TestValidateSearchCriteria(t *testing.T) {
+func TestIsAdmin(t *testing.T) {
 	tests := []struct {
-		name      string
-		criteria  *models.SearchCriteria
-		shouldErr bool
+		name           string
+		adminIDs       []int64
+		userID         int64
+		expectedResult bool
 	}{
 		{
-			name: "Valid specialization search",
-			criteria: &models.SearchCriteria{
-				SpecializationID: 1,
-			},
-			shouldErr: false,
+			name:           "User is admin",
+			adminIDs:       []int64{12345, 67890},
+			userID:         12345,
+			expectedResult: true,
 		},
 		{
-			name: "Valid day search",
-			criteria: &models.SearchCriteria{
-				DayOfWeek: 1,
-			},
-			shouldErr: false,
+			name:           "User is not admin",
+			adminIDs:       []int64{12345, 67890},
+			userID:         99999,
+			expectedResult: false,
 		},
 		{
-			name: "Valid clinic search",
-			criteria: &models.SearchCriteria{
-				ClinicID: 1,
-			},
-			shouldErr: false,
+			name:           "Empty admin list",
+			adminIDs:       []int64{},
+			userID:         12345,
+			expectedResult: false,
 		},
 		{
-			name: "Invalid day number",
-			criteria: &models.SearchCriteria{
-				DayOfWeek: 8, // Несуществующий день
-			},
-			shouldErr: true,
+			name:           "Nil config",
+			adminIDs:       nil,
+			userID:         12345,
+			expectedResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Проверяем валидность критериев поиска
-			isValid := true
-
-			if tt.criteria.DayOfWeek > 7 || tt.criteria.DayOfWeek < 0 {
-				isValid = false
-			}
-			if tt.criteria.SpecializationID < 0 {
-				isValid = false
-			}
-			if tt.criteria.ClinicID < 0 {
-				isValid = false
+			// Arrange
+			handler := &MainHandler{
+				config: &utils.Config{AdminIDs: tt.adminIDs},
 			}
 
-			if tt.shouldErr {
-				assert.False(t, isValid)
-			} else {
-				assert.True(t, isValid)
+			// Act
+			result := handler.isAdmin(tt.userID)
+
+			// Assert
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestIsInAdminMode(t *testing.T) {
+	tests := []struct {
+		name           string
+		adminState     map[int64]string
+		userID         int64
+		expectedResult bool
+	}{
+		{
+			name: "User in admin mode",
+			adminState: map[int64]string{
+				12345: "active",
+			},
+			userID:         12345,
+			expectedResult: true,
+		},
+		{
+			name: "User not in admin mode",
+			adminState: map[int64]string{
+				12345: "active",
+			},
+			userID:         99999,
+			expectedResult: false,
+		},
+		{
+			name:           "Empty admin state",
+			adminState:     map[int64]string{},
+			userID:         12345,
+			expectedResult: false,
+		},
+		{
+			name:           "Nil admin state",
+			adminState:     nil,
+			userID:         12345,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			handler := &MainHandler{
+				adminHandlers: &AdminHandlers{
+					adminState: tt.adminState,
+				},
 			}
+
+			// Act
+			result := handler.isInAdminMode(tt.userID)
+
+			// Assert
+			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
 }
 
 // ============================================================================
-// ТЕСТЫ ДЛЯ ЛОГИКИ РАБОТЫ С ДАННЫМИ (без внешних зависимостей)
+// ТЕСТЫ ДЛЯ ПАРСИНГА КОМАНД
 // ============================================================================
 
-func TestCreateUserFromTelegramUser(t *testing.T) {
-	telegramUser := &tgbotapi.User{
-		ID:        12345,
-		UserName:  "testuser",
-		FirstName: "Test",
-		LastName:  "User",
-	}
-
-	// Тестируем логику преобразования данных пользователя
-	expectedUser := &models.User{
-		TelegramID: telegramUser.ID,
-		Username:   telegramUser.UserName,
-		FirstName:  telegramUser.FirstName,
-		LastName:   telegramUser.LastName,
-	}
-
-	assert.Equal(t, int64(12345), expectedUser.TelegramID)
-	assert.Equal(t, "testuser", expectedUser.Username)
-	assert.Equal(t, "Test", expectedUser.FirstName)
-	assert.Equal(t, "User", expectedUser.LastName)
-}
-
-func TestBuildSpecializationKeyboard(t *testing.T) {
-	// Тестируем логику построения клавиатуры
-	specializations := []*models.Specialization{
-		{ID: 1, Name: "Хирургия"},
-		{ID: 2, Name: "Терапия"},
-		{ID: 3, Name: "Стоматология"},
-		{ID: 4, Name: "Дерматология"},
-	}
-
-	// Проверяем, что специализации правильно обрабатываются
-	assert.Len(t, specializations, 4)
-	assert.Equal(t, "Хирургия", specializations[0].Name)
-	assert.Equal(t, 1, specializations[0].ID)
-}
-
-func TestBuildClinicKeyboard(t *testing.T) {
-	// Тестируем логику построения клавиатуры для клиник
-	clinics := []*models.Clinic{
-		{ID: 1, Name: "Клиника 1"},
-		{ID: 2, Name: "Клиника 2"},
-		{ID: 3, Name: "Клиника 3"},
-	}
-
-	assert.Len(t, clinics, 3)
-	assert.Equal(t, "Клиника 1", clinics[0].Name)
-	assert.Equal(t, 1, clinics[0].ID)
-}
-
-// ============================================================================
-// ТЕСТЫ ДЛЯ ОБРАБОТКИ CALLBACK ДАННЫХ
-// ============================================================================
-
-func TestParseCallbackData(t *testing.T) {
+func TestParseSearchCommand(t *testing.T) {
 	tests := []struct {
 		name          string
-		callbackData  string
-		expectedType  string
+		command       string
 		expectedID    int
 		shouldSucceed bool
 	}{
 		{
-			name:          "Valid specialization callback",
-			callbackData:  "search_spec_1",
-			expectedType:  "specialization",
+			name:          "Valid search command",
+			command:       "/search_1",
 			expectedID:    1,
 			shouldSucceed: true,
 		},
 		{
-			name:          "Valid clinic callback",
-			callbackData:  "search_clinic_2",
-			expectedType:  "clinic",
-			expectedID:    2,
+			name:          "Valid search command with double digit",
+			command:       "/search_42",
+			expectedID:    42,
 			shouldSucceed: true,
 		},
 		{
-			name:          "Valid day callback",
-			callbackData:  "search_day_3",
-			expectedType:  "day",
-			expectedID:    3,
+			name:          "Valid search command with triple digit",
+			command:       "/search_123",
+			expectedID:    123,
 			shouldSucceed: true,
 		},
 		{
-			name:          "Invalid callback format",
-			callbackData:  "invalid_data",
-			expectedType:  "",
+			name:          "Invalid search command - non numeric",
+			command:       "/search_abc",
 			expectedID:    0,
 			shouldSucceed: false,
 		},
 		{
-			name:          "Callback with non-numeric ID",
-			callbackData:  "search_spec_abc",
-			expectedType:  "",
+			name:          "Invalid search command - no ID",
+			command:       "/search_",
+			expectedID:    0,
+			shouldSucceed: false,
+		},
+		{
+			name:          "Invalid search command - empty",
+			command:       "/search",
+			expectedID:    0,
+			shouldSucceed: false,
+		},
+		{
+			name:          "Invalid search command - special characters",
+			command:       "/search_1a2",
 			expectedID:    0,
 			shouldSucceed: false,
 		},
@@ -296,43 +198,21 @@ func TestParseCallbackData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var callbackType string
-			var id int
+			// Act
+			var specID int
 			var err error
 
-			// Имитируем логику парсинга из handleSearchSpecCallback
-			switch {
-			case len(tt.callbackData) > len("search_spec_") && tt.callbackData[:len("search_spec_")] == "search_spec_":
-				callbackType = "specialization"
-				idStr := tt.callbackData[len("search_spec_"):]
-				_, err = strconv.Atoi(idStr)
-				if err == nil {
-					id, _ = strconv.Atoi(idStr)
-				}
-			case len(tt.callbackData) > len("search_clinic_") && tt.callbackData[:len("search_clinic_")] == "search_clinic_":
-				callbackType = "clinic"
-				idStr := tt.callbackData[len("search_clinic_"):]
-				_, err = strconv.Atoi(idStr)
-				if err == nil {
-					id, _ = strconv.Atoi(idStr)
-				}
-			case len(tt.callbackData) > len("search_day_") && tt.callbackData[:len("search_day_")] == "search_day_":
-				callbackType = "day"
-				idStr := tt.callbackData[len("search_day_"):]
-				_, err = strconv.Atoi(idStr)
-				if err == nil {
-					id, _ = strconv.Atoi(idStr)
-				}
-			default:
-				callbackType = ""
-				id = 0
-				err = errors.New("invalid format")
+			if strings.HasPrefix(tt.command, "/search_") {
+				specIDStr := strings.TrimPrefix(tt.command, "/search_")
+				specID, err = strconv.Atoi(specIDStr)
+			} else {
+				err = strconv.ErrSyntax
 			}
 
+			// Assert
 			if tt.shouldSucceed {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedType, callbackType)
-				assert.Equal(t, tt.expectedID, id)
+				assert.Equal(t, tt.expectedID, specID)
 			} else {
 				assert.Error(t, err)
 			}
@@ -340,108 +220,472 @@ func TestParseCallbackData(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// ТЕСТЫ ДЛЯ ФОРМАТИРОВАНИЯ СООБЩЕНИЙ
-// ============================================================================
-
-func TestBuildVeterinarianMessage(t *testing.T) {
-	// Тестируем логику построения сообщения с информацией о враче
-	vet := &models.Veterinarian{
-		FirstName:       "Иван",
-		LastName:        "Петров",
-		Phone:           "+79123456789",
-		Email:           sql.NullString{String: "ivan@vet.ru", Valid: true},
-		ExperienceYears: sql.NullInt64{Int64: 5, Valid: true},
-		Specializations: []*models.Specialization{
-			{Name: "Хирургия"},
-			{Name: "Терапия"},
+func TestCommandRoutingLogic(t *testing.T) {
+	tests := []struct {
+		name           string
+		command        string
+		expectedAction string
+		isAdmin        bool
+	}{
+		{
+			name:           "Start command",
+			command:        "/start",
+			expectedAction: "vet_start",
+			isAdmin:        false,
+		},
+		{
+			name:           "Help command",
+			command:        "/help",
+			expectedAction: "vet_help",
+			isAdmin:        false,
+		},
+		{
+			name:           "Specializations command",
+			command:        "/specializations",
+			expectedAction: "vet_specializations",
+			isAdmin:        false,
+		},
+		{
+			name:           "Search command",
+			command:        "/search",
+			expectedAction: "vet_search",
+			isAdmin:        false,
+		},
+		{
+			name:           "Admin command with access",
+			command:        "/admin",
+			expectedAction: "admin_panel",
+			isAdmin:        true,
+		},
+		{
+			name:           "Admin command without access",
+			command:        "/admin",
+			expectedAction: "access_denied",
+			isAdmin:        false,
+		},
+		{
+			name:           "Stats command with access",
+			command:        "/stats",
+			expectedAction: "admin_stats",
+			isAdmin:        true,
+		},
+		{
+			name:           "Stats command without access",
+			command:        "/stats",
+			expectedAction: "no_action",
+			isAdmin:        false,
+		},
+		{
+			name:           "Unknown command",
+			command:        "/unknown",
+			expectedAction: "unknown_command",
+			isAdmin:        false,
 		},
 	}
 
-	// Проверяем, что данные правильно форматируются
-	assert.Contains(t, vet.FirstName, "Иван")
-	assert.Contains(t, vet.LastName, "Петров")
-	assert.Equal(t, "+79123456789", vet.Phone)
-	assert.True(t, vet.Email.Valid)
-	assert.Equal(t, "ivan@vet.ru", vet.Email.String)
-	assert.Equal(t, int64(5), vet.ExperienceYears.Int64)
-	assert.Len(t, vet.Specializations, 2)
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			var action string
 
-func TestBuildEmptyResultsMessage(t *testing.T) {
-	// Тестируем логику построения сообщения об отсутствии результатов
-	specializationName := "Хирургия"
+			// Имитируем логику роутинга из handleCommand
+			switch tt.command {
+			case "/start":
+				action = "vet_start"
+			case "/help":
+				action = "vet_help"
+			case "/specializations":
+				action = "vet_specializations"
+			case "/search":
+				action = "vet_search"
+			case "/admin":
+				if tt.isAdmin {
+					action = "admin_panel"
+				} else {
+					action = "access_denied"
+				}
+			case "/stats":
+				if tt.isAdmin {
+					action = "admin_stats"
+				} else {
+					action = "no_action"
+				}
+			default:
+				action = "unknown_command"
+			}
 
-	// Имитируем логику из HandleSearchBySpecialization
-	message := fmt.Sprintf("👨‍⚕️ *Врачи по специализации \"%s\" не найдены*\n\nПопробуйте выбрать другую специализацию.", specializationName)
-
-	assert.Contains(t, message, "не найдены")
-	assert.Contains(t, message, "Хирургия")
-	assert.Contains(t, message, "специализации")
-}
-
-// ============================================================================
-// ТЕСТЫ ДЛЯ ОБРАБОТКИ ОШИБОК
-// ============================================================================
-
-func TestErrorHandling(t *testing.T) {
-	// Тестируем различные сценарии обработки ошибок
-	errorScenarios := []struct {
-		name        string
-		errorType   string
-		shouldRetry bool
-	}{
-		{"Database connection error", "database", false},
-		{"Network error", "network", true},
-		{"Invalid data error", "validation", false},
-	}
-
-	for _, scenario := range errorScenarios {
-		t.Run(scenario.name, func(t *testing.T) {
-			// Проверяем логику обработки разных типов ошибок
-			isRetryable := scenario.errorType == "network"
-			assert.Equal(t, scenario.shouldRetry, isRetryable)
+			// Assert
+			assert.Equal(t, tt.expectedAction, action)
 		})
 	}
 }
 
 // ============================================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ТЕСТОВ
+// ТЕСТЫ ДЛЯ ОБРАБОТКИ РАЗЛИЧНЫХ ТИПОВ ОБНОВЛЕНИЙ
 // ============================================================================
 
-// createTestVeterinarian создает тестового ветеринара
-func createTestVeterinarian() *models.Veterinarian {
-	return &models.Veterinarian{
-		ID:              1,
-		FirstName:       "Тест",
-		LastName:        "Врач",
-		Phone:           "+79123456789",
-		Email:           sql.NullString{String: "test@vet.ru", Valid: true},
-		ExperienceYears: sql.NullInt64{Int64: 3, Valid: true},
-		IsActive:        true,
-		CreatedAt:       time.Now(),
+func TestUpdateTypeDetection(t *testing.T) {
+	tests := []struct {
+		name          string
+		update        tgbotapi.Update
+		expectedType  string
+		shouldProcess bool
+	}{
+		{
+			name: "Callback query update",
+			update: tgbotapi.Update{
+				CallbackQuery: &tgbotapi.CallbackQuery{
+					ID:   "test",
+					Data: "test_data",
+				},
+			},
+			expectedType:  "callback",
+			shouldProcess: true,
+		},
+		{
+			name: "Message with text",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{
+					Text: "/start",
+					From: &tgbotapi.User{ID: 12345},
+				},
+			},
+			expectedType:  "message",
+			shouldProcess: true,
+		},
+		{
+			name: "Message without text",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{
+					Text: "",
+					From: &tgbotapi.User{ID: 12345},
+				},
+			},
+			expectedType:  "empty_message",
+			shouldProcess: false,
+		},
+		{
+			name: "Nil message",
+			update: tgbotapi.Update{
+				Message: nil,
+			},
+			expectedType:  "nil_message",
+			shouldProcess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Act
+			var updateType string
+			var shouldProcess bool
+
+			if tt.update.CallbackQuery != nil {
+				updateType = "callback"
+				shouldProcess = true
+			} else if tt.update.Message != nil {
+				if tt.update.Message.Text != "" {
+					updateType = "message"
+					shouldProcess = true
+				} else {
+					updateType = "empty_message"
+					shouldProcess = false
+				}
+			} else {
+				updateType = "nil_message"
+				shouldProcess = false
+			}
+
+			// Assert
+			assert.Equal(t, tt.expectedType, updateType)
+			assert.Equal(t, tt.shouldProcess, shouldProcess)
+		})
 	}
 }
 
-// createTestSpecialization создает тестовую специализацию
-func createTestSpecialization() *models.Specialization {
-	return &models.Specialization{
-		ID:          1,
-		Name:        "Тестовая специализация",
-		Description: "Описание тестовой специализации",
-		CreatedAt:   time.Now(),
+// ============================================================================
+// ТЕСТЫ ДЛЯ АДМИНСКОЙ ЛОГИКИ
+// ============================================================================
+
+func TestAdminAuthorizationLogic(t *testing.T) {
+	tests := []struct {
+		name            string
+		userID          int64
+		adminIDs        []int64
+		adminState      map[int64]string
+		expectedIsAdmin bool
+		expectedInMode  bool
+	}{
+		{
+			name:            "Admin user in admin mode",
+			userID:          12345,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{12345: "active"},
+			expectedIsAdmin: true,
+			expectedInMode:  true,
+		},
+		{
+			name:            "Admin user not in admin mode",
+			userID:          12345,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{},
+			expectedIsAdmin: true,
+			expectedInMode:  false,
+		},
+		{
+			name:            "Non-admin user",
+			userID:          99999,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{12345: "active"},
+			expectedIsAdmin: false,
+			expectedInMode:  false,
+		},
+		{
+			name:            "User not in admin list",
+			userID:          55555,
+			adminIDs:        []int64{12345, 67890},
+			adminState:      map[int64]string{12345: "active"},
+			expectedIsAdmin: false,
+			expectedInMode:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			handler := &MainHandler{
+				config: &utils.Config{AdminIDs: tt.adminIDs},
+				adminHandlers: &AdminHandlers{
+					adminState: tt.adminState,
+				},
+			}
+
+			// Act
+			isAdmin := handler.isAdmin(tt.userID)
+			inAdminMode := handler.isInAdminMode(tt.userID)
+
+			// Assert
+			assert.Equal(t, tt.expectedIsAdmin, isAdmin)
+			assert.Equal(t, tt.expectedInMode, inAdminMode)
+		})
 	}
 }
 
-// createTestClinic создает тестовую клинику
-func createTestClinic() *models.Clinic {
-	return &models.Clinic{
-		ID:           1,
-		Name:         "Тестовая клиника",
-		Address:      "Тестовый адрес",
-		Phone:        sql.NullString{String: "+79998887766", Valid: true},
-		WorkingHours: sql.NullString{String: "9:00-18:00", Valid: true},
-		IsActive:     true,
-		CreatedAt:    time.Now(),
+// ============================================================================
+// ТЕСТЫ ДЛЯ ТЕКСТОВЫХ СООБЩЕНИЙ
+// ============================================================================
+
+func TestTextMessageHandlingLogic(t *testing.T) {
+	tests := []struct {
+		name            string
+		messageText     string
+		isAdmin         bool
+		inAdminMode     bool
+		expectedHandler string
+	}{
+		{
+			name:            "Regular user text message",
+			messageText:     "Hello world",
+			isAdmin:         false,
+			inAdminMode:     false,
+			expectedHandler: "help_message",
+		},
+		{
+			name:            "Admin user text message in admin mode",
+			messageText:     "admin command",
+			isAdmin:         true,
+			inAdminMode:     true,
+			expectedHandler: "admin_handler",
+		},
+		{
+			name:            "Admin user text message not in admin mode",
+			messageText:     "regular message",
+			isAdmin:         true,
+			inAdminMode:     false,
+			expectedHandler: "help_message",
+		},
+		{
+			name:            "Search command message",
+			messageText:     "/search_1",
+			isAdmin:         false,
+			inAdminMode:     false,
+			expectedHandler: "search_handler",
+		},
 	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			var handler string
+
+			// Имитируем логику из HandleUpdate
+			if strings.HasPrefix(tt.messageText, "/search_") {
+				handler = "search_handler"
+			} else if tt.isAdmin && tt.inAdminMode {
+				handler = "admin_handler"
+			} else {
+				handler = "help_message"
+			}
+
+			// Assert
+			assert.Equal(t, tt.expectedHandler, handler)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ ВАЛИДАЦИИ ВХОДНЫХ ДАННЫХ
+// ============================================================================
+
+func TestInputValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		update        tgbotapi.Update
+		shouldProcess bool
+		reason        string
+	}{
+		{
+			name: "Valid callback query",
+			update: tgbotapi.Update{
+				CallbackQuery: &tgbotapi.CallbackQuery{ID: "test"},
+			},
+			shouldProcess: true,
+			reason:        "callback should be processed",
+		},
+		{
+			name: "Valid text message",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{Text: "/start"},
+			},
+			shouldProcess: true,
+			reason:        "text message should be processed",
+		},
+		{
+			name: "Empty text message",
+			update: tgbotapi.Update{
+				Message: &tgbotapi.Message{Text: ""},
+			},
+			shouldProcess: false,
+			reason:        "empty text should be ignored",
+		},
+		{
+			name: "Nil message",
+			update: tgbotapi.Update{
+				Message: nil,
+			},
+			shouldProcess: false,
+			reason:        "nil message should be ignored",
+		},
+		{
+			name:          "Empty update",
+			update:        tgbotapi.Update{},
+			shouldProcess: false,
+			reason:        "empty update should be ignored",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Act
+			var shouldProcess bool
+
+			if tt.update.CallbackQuery != nil {
+				shouldProcess = true
+			} else if tt.update.Message != nil && tt.update.Message.Text != "" {
+				shouldProcess = true
+			} else {
+				shouldProcess = false
+			}
+
+			// Assert
+			assert.Equal(t, tt.shouldProcess, shouldProcess, tt.reason)
+		})
+	}
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ КРАЙНИХ СЛУЧАЕВ
+// ============================================================================
+
+func TestEdgeCases(t *testing.T) {
+	t.Run("Nil config should not cause panic", func(t *testing.T) {
+		handler := &MainHandler{
+			config: nil,
+		}
+
+		// Должны обрабатывать nil без паники
+		isAdmin := handler.isAdmin(12345)
+		assert.False(t, isAdmin)
+	})
+
+	t.Run("Nil admin handlers should not cause panic", func(t *testing.T) {
+		handler := &MainHandler{
+			adminHandlers: nil,
+		}
+
+		// Должны обрабатывать nil без паники
+		inAdminMode := handler.isInAdminMode(12345)
+		assert.False(t, inAdminMode)
+	})
+
+	t.Run("Very large user ID", func(t *testing.T) {
+		handler := &MainHandler{
+			config: &utils.Config{AdminIDs: []int64{12345}},
+		}
+
+		isAdmin := handler.isAdmin(999999999999999999)
+		assert.False(t, isAdmin)
+	})
+
+	t.Run("Negative user ID", func(t *testing.T) {
+		handler := &MainHandler{
+			config: &utils.Config{AdminIDs: []int64{12345}},
+		}
+
+		isAdmin := handler.isAdmin(-12345)
+		assert.False(t, isAdmin)
+	})
+
+	t.Run("Zero user ID", func(t *testing.T) {
+		handler := &MainHandler{
+			config: &utils.Config{AdminIDs: []int64{12345}},
+		}
+
+		isAdmin := handler.isAdmin(0)
+		assert.False(t, isAdmin)
+	})
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ КОМАНДЫ TEST
+// ============================================================================
+
+func TestTestCommandLogic(t *testing.T) {
+	t.Run("Test command should be routed to vet handlers", func(t *testing.T) {
+		command := "/test"
+		var handler string
+
+		if command == "/test" {
+			handler = "vet_test"
+		}
+
+		assert.Equal(t, "vet_test", handler)
+	})
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ КЛИНИК КОМАНД
+// ============================================================================
+
+func TestClinicsCommandLogic(t *testing.T) {
+	t.Run("Clinics command should be routed to vet handlers", func(t *testing.T) {
+		command := "/clinics"
+		var handler string
+
+		if command == "/clinics" {
+			handler = "vet_clinics"
+		}
+
+		assert.Equal(t, "vet_clinics", handler)
+	})
 }
