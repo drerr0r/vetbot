@@ -220,16 +220,18 @@ func TestBotHandlers_ErrorHandlingLogic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
-			var loggedError string
-			var userChatID int64
+			var (
+				action string
+				chatID int64
+			)
 
 			// Имитируем логику обработки ошибок
-			userChatID = tt.chatID
-			loggedError = tt.errorMsg
+			chatID = tt.chatID
+			action = tt.errorMsg
 
 			// Assert
-			assert.Equal(t, tt.chatID, userChatID)
-			assert.Equal(t, tt.expectedLog, loggedError)
+			assert.Equal(t, tt.chatID, chatID)
+			assert.Equal(t, tt.expectedLog, action)
 		})
 	}
 }
@@ -259,8 +261,10 @@ func TestBotHandlers_WelcomeMessageLogic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
-			var action string
-			var targetChatID int64
+			var (
+				action       string
+				targetChatID int64
+			)
 
 			// Имитируем логику отправки приветственного сообщения
 			targetChatID = tt.chatID
