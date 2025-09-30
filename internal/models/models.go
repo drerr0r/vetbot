@@ -38,6 +38,14 @@ type Veterinarian struct {
 	CreatedAt       time.Time         `json:"created_at"`
 }
 
+// City представляет населенный пункт
+type City struct {
+	ID        int       `json:"id"`
+	Name      string    `json:"name"`
+	Region    string    `json:"region"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Clinic представляет клинику/место приема
 type Clinic struct {
 	ID           int            `json:"id"`
@@ -46,7 +54,13 @@ type Clinic struct {
 	Phone        sql.NullString `json:"phone"`         // Может быть NULL
 	WorkingHours sql.NullString `json:"working_hours"` // Может быть NULL
 	IsActive     bool           `json:"is_active"`     // Добавлено поле для деактивации
+	CityID       sql.NullInt64  `json:"city_id"`       // Ссылка на город
+	District     sql.NullString `json:"district"`      // Район города
+	MetroStation sql.NullString `json:"metro_station"` // Станция метро
 	CreatedAt    time.Time      `json:"created_at"`
+
+	// Для удобства - связанные данные
+	City *City `json:"city,omitempty"`
 }
 
 // Schedule представляет расписание врача
@@ -93,4 +107,18 @@ type ClinicEditData struct {
 	ClinicID     int    `json:"clinic_id"`
 	Field        string `json:"field"`
 	CurrentValue string `json:"current_value"`
+}
+
+// ImportResult представляет результат импорта
+type ImportResult struct {
+	TotalRows    int           `json:"total_rows"`
+	SuccessCount int           `json:"success_count"`
+	ErrorCount   int           `json:"error_count"`
+	Errors       []ImportError `json:"errors"`
+}
+
+type ImportError struct {
+	RowNumber int    `json:"row_number"`
+	Field     string `json:"field"`
+	Message   string `json:"message"`
 }

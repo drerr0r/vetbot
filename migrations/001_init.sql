@@ -101,3 +101,31 @@ INSERT INTO schedules (vet_id, clinic_id, day_of_week, start_time, end_time) VAL
 (3, 2, 1, '10:00', '16:00'),
 (3, 2, 3, '10:00', '16:00'),
 (3, 2, 5, '10:00', '16:00');
+
+-- ========== ДОБАВЛЕНИЕ ГОРОДОВ И АДРЕСОВ ==========
+
+-- Таблица населенных пунктов
+CREATE TABLE IF NOT EXISTS cities (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    region VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Добавляем поля к клиникам
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS city_id INTEGER REFERENCES cities(id);
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS district VARCHAR(100);
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS metro_station VARCHAR(100);
+
+-- Вставляем основные города
+INSERT INTO cities (name, region) VALUES 
+('Москва', 'Центральный федеральный округ'),
+('Санкт-Петербург', 'Северо-Западный федеральный округ'),
+('Казань', 'Приволжский федеральный округ'),
+('Новосибирск', 'Сибирский федеральный округ'),
+('Екатеринбург', 'Уральский федеральный округ'),
+('Нижний Новгород', 'Приволжский федеральный округ'),
+('Краснодар', 'Южный федеральный округ'),
+('Воронеж', 'Центральный федеральный округ'),
+('Самара', 'Приволжский федеральный округ'),
+('Ростов-на-Дону', 'Южный федеральный округ');

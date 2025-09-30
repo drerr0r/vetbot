@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
 	_ "github.com/lib/pq"
@@ -369,5 +370,130 @@ func (d *Database) AddMissingColumns() error {
 			END IF;
 		END $$;
 	`)
+	return err
+}
+
+// ========== МЕТОДЫ ДЛЯ ГОРОДОВ И ИМПОРТА ==========
+
+// CreateCity создает новый город
+func (d *Database) CreateCity(city *models.City) error {
+	query := `INSERT INTO cities (name, region) VALUES ($1, $2) RETURNING id, created_at`
+	return d.db.QueryRow(query, city.Name, city.Region).Scan(&city.ID, &city.CreatedAt)
+}
+
+// GetAllCities возвращает все города
+func (d *Database) GetAllCities() ([]*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities ORDER BY name`
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cities []*models.City
+	for rows.Next() {
+		var city models.City
+		err := rows.Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		cities = append(cities, &city)
+	}
+	return cities, nil
+}
+
+// GetCityByID возвращает город по ID
+func (d *Database) GetCityByID(id int) (*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities WHERE id = $1`
+	var city models.City
+	err := d.db.QueryRow(query, id).Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &city, nil
+}
+
+// GetCityByName возвращает город по названию
+func (d *Database) GetCityByName(name string) (*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities WHERE LOWER(name) = LOWER($1)`
+	var city models.City
+	err := d.db.QueryRow(query, name).Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &city, nil
+}
+
+// CreateClinicWithCity создает клинику с привязкой к городу
+func (d *Database) CreateClinicWithCity(clinic *models.Clinic) error {
+	query := `INSERT INTO clinics (name, address, phone, working_hours, is_active, city_id, district, metro_station) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`
+
+	return d.db.QueryRow(query,
+		clinic.Name,
+		clinic.Address,
+		clinic.Phone,
+		clinic.WorkingHours,
+		clinic.IsActive,
+		clinic.CityID,
+		clinic.District,
+		clinic.MetroStation,
+	).Scan(&clinic.ID, &clinic.CreatedAt)
+}
+
+// GetAllClinicsWithCities возвращает все клиники с информацией о городах
+func (d *Database) GetAllClinicsWithCities() ([]*models.Clinic, error) {
+	query := `
+		SELECT c.id, c.name, c.address, c.phone, c.working_hours, c.is_active, 
+		       c.city_id, c.district, c.metro_station, c.created_at,
+		       ct.id, ct.name, ct.region, ct.created_at
+		FROM clinics c
+		LEFT JOIN cities ct ON c.city_id = ct.id
+		ORDER BY c.name`
+
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var clinics []*models.Clinic
+	for rows.Next() {
+		var clinic models.Clinic
+		var cityID sql.NullInt64
+		var city models.City
+		var cityCreatedAt time.Time
+
+		err := rows.Scan(
+			&clinic.ID, &clinic.Name, &clinic.Address, &clinic.Phone, &clinic.WorkingHours,
+			&clinic.IsActive, &cityID, &clinic.District, &clinic.MetroStation, &clinic.CreatedAt,
+			&city.ID, &city.Name, &city.Region, &cityCreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		clinic.CityID = cityID
+		if cityID.Valid {
+			city.CreatedAt = cityCreatedAt
+			clinic.City = &city
+		}
+
+		clinics = append(clinics, &clinic)
+	}
+	return clinics, nil
+}
+
+// UpdateClinic обновляет данные клиники
+func (d *Database) UpdateClinic(clinic *models.Clinic) error {
+	query := `UPDATE clinics SET 
+		name = $1, address = $2, phone = $3, working_hours = $4, 
+		is_active = $5, city_id = $6, district = $7, metro_station = $8
+		WHERE id = $9`
+
+	_, err := d.db.Exec(query,
+		clinic.Name, clinic.Address, clinic.Phone, clinic.WorkingHours,
+		clinic.IsActive, clinic.CityID, clinic.District, clinic.MetroStation, clinic.ID,
+	)
 	return err
 }
