@@ -27,7 +27,5 @@ dist/
 # 
 !cmd/
 !cmd/vetbot/
-!cmd/vetbot/main.gocoverage.*
-*.out
-*.out
-coverage.*
+!cmd/vetbot/main.go
+

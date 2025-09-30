@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o vetbot ./cmd/vetb
 FROM alpine:latest
 
 # Устанавливаем зависимости для runtime
-RUN apk --no-cache add ca-certificates tzdata postgresql-client
+RUN apk --no-cache add ca-certificates tzdata postgresql-client bash
 
 # Создаем пользователя app
 RUN addgroup -S app && adduser -S app -G app
@@ -35,7 +35,7 @@ COPY --from=builder /app/vetbot .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/scripts ./scripts
 
-# Даем права на выполнение скриптов
+# Даем права на выполнение скриптов ДО смены пользователя
 RUN chmod +x scripts/apply_migrations_railway.sh
 
 # Создаем пустую папку static если нужно
