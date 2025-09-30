@@ -86,14 +86,6 @@ type UserRequest struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
-// SearchCriteria представляет критерии поиска врачей
-type SearchCriteria struct {
-	SpecializationID int    `json:"specialization_id"`
-	DayOfWeek        int    `json:"day_of_week"`
-	Time             string `json:"time"`
-	ClinicID         int    `json:"clinic_id"`
-}
-
 // VetEditData временные данные для редактирования врача
 type VetEditData struct {
 	VetID           int    `json:"vet_id"`
@@ -121,4 +113,26 @@ type ImportError struct {
 	RowNumber int    `json:"row_number"`
 	Field     string `json:"field"`
 	Message   string `json:"message"`
+}
+
+// Добавляем новые структуры для импорта
+type ImportRequest struct {
+	Type      string        `json:"type"` // "cities", "clinics", "veterinarians"
+	FilePath  string        `json:"file_path"`
+	UserID    int64         `json:"user_id"`
+	Status    string        `json:"status"` // "pending", "processing", "completed", "failed"
+	Result    *ImportResult `json:"result,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
+}
+
+// Расширяем SearchCriteria для поиска по городам
+type SearchCriteria struct {
+	SpecializationID int    `json:"specialization_id"`
+	DayOfWeek        int    `json:"day_of_week"`
+	Time             string `json:"time"`
+	ClinicID         int    `json:"clinic_id"`
+	CityID           int    `json:"city_id"`       // Добавляем поиск по городу
+	CityName         string `json:"city_name"`     // Поиск по названию города
+	District         string `json:"district"`      // Поиск по району
+	MetroStation     string `json:"metro_station"` // Поиск по станции метро
 }

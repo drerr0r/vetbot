@@ -50,6 +50,9 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🏥 Поиск по клиникам", "main_clinics"),
+			tgbotapi.NewInlineKeyboardButtonData("🏙️ Поиск по городу", "main_city"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
 		),
 	)
@@ -265,6 +268,77 @@ func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
 	}
 }
 
+// HandleSearchByCity показывает меню поиска по городам
+func (h *VetHandlers) HandleSearchByCity(update tgbotapi.Update) {
+	log.Printf("HandleSearchByCity called")
+
+	var chatID int64
+
+	// Определяем chatID в зависимости от типа update
+	if update.CallbackQuery != nil {
+		chatID = update.CallbackQuery.Message.Chat.ID
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
+		h.bot.Send(callback)
+	} else if update.Message != nil {
+		chatID = update.Message.Chat.ID
+	} else {
+		log.Printf("Error: both CallbackQuery and Message are nil")
+		return
+	}
+
+	// Получаем список городов
+	cities, err := h.db.GetAllCities()
+	if err != nil {
+		log.Printf("Error getting cities: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка городов")
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(cities) == 0 {
+		msg := tgbotapi.NewMessage(chatID, "Городы не найдены в базе данных")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Создаем кнопки для городов
+	var keyboardRows [][]tgbotapi.InlineKeyboardButton
+	var currentRow []tgbotapi.InlineKeyboardButton
+
+	for i, city := range cities {
+		btn := tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("%s (%s)", city.Name, city.Region),
+			fmt.Sprintf("search_city_%d", city.ID),
+		)
+		currentRow = append(currentRow, btn)
+
+		// Создаем новый ряд после каждых 2 кнопок или в конце
+		if (i+1)%2 == 0 || i == len(cities)-1 {
+			keyboardRows = append(keyboardRows, currentRow)
+			currentRow = []tgbotapi.InlineKeyboardButton{}
+		}
+	}
+
+	// Добавляем кнопку "Назад"
+	backRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
+	)
+	keyboardRows = append(keyboardRows, backRow)
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
+
+	msg := tgbotapi.NewMessage(chatID,
+		"🏙️ *Выберите город для поиска врачей:*\n\nЯ покажу врачей, работающих в выбранном городе.")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	log.Printf("Sending cities menu to chat %d", chatID)
+	_, err = h.bot.Send(msg)
+	if err != nil {
+		log.Printf("Error sending cities menu: %v", err)
+	}
+}
+
 // HandleHelp показывает справку с кнопкой "Назад"
 func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 	log.Printf("HandleHelp called")
@@ -295,14 +369,16 @@ func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 • 🔍 *Поиск по специализациям* - найти врача по направлению
 • 🕐 *Поиск по времени* - найти врача по дню недели
 • 🏥 *Поиск по клиникам* - найти врачей в конкретной клинике
+• 🏙️ *Поиск по городу* - найти врачей в определенном городе
 
 *Как пользоваться:*
 1. Выберите способ поиска из главного меню
-2. Нажмите на нужную кнопку (специализация, день или клиника)
+2. Нажмите на нужную кнопку (специализация, день, клиника или город)
 3. Бот покажет список врачей с контактами и расписанием
 
 *Команды:*
 /start - Главное меню
+/cities - Поиск по городам
 /help - Эта справка`
 
 	msg := tgbotapi.NewMessage(chatID, helpText)
@@ -583,6 +659,8 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 		h.HandleSearch(update)
 	case data == "main_clinics":
 		h.HandleClinics(update)
+	case data == "main_city":
+		h.HandleSearchByCity(update)
 	case data == "main_help":
 		h.HandleHelp(update)
 	case strings.HasPrefix(data, "search_spec_"):
@@ -591,6 +669,8 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 		h.handleDaySelection(callback)
 	case strings.HasPrefix(data, "search_clinic_"):
 		h.handleSearchClinicCallback(callback)
+	case strings.HasPrefix(data, "search_city_"):
+		h.handleSearchCityCallback(callback)
 	default:
 		// Неизвестный callback
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Неизвестная команда")
@@ -607,6 +687,9 @@ func (h *VetHandlers) showMainMenu(callback *tgbotapi.CallbackQuery) {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🏥 Поиск по клиникам", "main_clinics"),
+			tgbotapi.NewInlineKeyboardButtonData("🏙️ Поиск по городу", "main_city"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
 		),
 	)
@@ -670,6 +753,125 @@ func (h *VetHandlers) handleSearchClinicCallback(callback *tgbotapi.CallbackQuer
 		CallbackQuery: callback,
 	}
 	h.HandleSearchByClinic(update, clinicID)
+}
+
+// handleSearchCityCallback обрабатывает callback поиска по городу
+func (h *VetHandlers) handleSearchCityCallback(callback *tgbotapi.CallbackQuery) {
+	cityIDStr := strings.TrimPrefix(callback.Data, "search_city_")
+	cityID, err := strconv.Atoi(cityIDStr)
+	if err != nil {
+		log.Printf("Error parsing city ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	log.Printf("Searching for city ID: %d", cityID)
+
+	criteria := &models.SearchCriteria{
+		CityID: cityID,
+	}
+
+	vets, err := h.db.FindAvailableVets(criteria)
+	if err != nil {
+		log.Printf("Error finding vets by city: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка при поиске врачей")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	log.Printf("Found %d vets for city %d", len(vets), cityID)
+
+	// Получаем информацию о городе
+	city, err := h.db.GetCityByID(cityID)
+	if err != nil {
+		log.Printf("Error getting city: %v", err)
+		city = &models.City{Name: "Неизвестный город"}
+	}
+
+	// Клавиатура с кнопками навигации
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 К городам", "main_city"),
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
+		),
+	)
+
+	if len(vets) == 0 {
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID,
+			fmt.Sprintf("🏙️ *Врачи в городе \"%s\" не найдены*\n\nПопробуйте выбрать другой город.", city.Name))
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Поиск завершен")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🏙️ *Врачи в городе \"%s\":*\n\n", city.Name))
+
+	for i, vet := range vets {
+		sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", i+1, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
+		sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
+
+		if vet.Email.Valid && vet.Email.String != "" {
+			sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
+		}
+
+		if vet.ExperienceYears.Valid {
+			sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
+		}
+
+		// Специализации врача
+		specs, err := h.db.GetSpecializationsByVetID(vet.ID)
+		if err == nil && len(specs) > 0 {
+			sb.WriteString("🎯 *Специализации:* ")
+			specNames := make([]string, len(specs))
+			for j, spec := range specs {
+				specNames[j] = html.EscapeString(spec.Name)
+			}
+			sb.WriteString(strings.Join(specNames, ", "))
+			sb.WriteString("\n")
+		}
+
+		// Расписание врача
+		schedules, err := h.db.GetSchedulesByVetID(vet.ID)
+		if err == nil && len(schedules) > 0 {
+			sb.WriteString("🕐 *Расписание:*\n")
+			for _, schedule := range schedules {
+				dayName := getDayName(schedule.DayOfWeek)
+				startTime := schedule.StartTime
+				endTime := schedule.EndTime
+				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+					sb.WriteString(fmt.Sprintf("   - %s: %s-%s", dayName, startTime, endTime))
+					if schedule.Clinic != nil && schedule.Clinic.Name != "" {
+						sb.WriteString(fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name)))
+					}
+					sb.WriteString("\n")
+				}
+			}
+		}
+
+		sb.WriteString("\n")
+	}
+
+	editMsg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, sb.String())
+	editMsg.ParseMode = "Markdown"
+	editMsg.ReplyMarkup = &keyboard
+
+	_, err = h.bot.Send(editMsg)
+	if err != nil {
+		log.Printf("Error sending city search results: %v", err)
+		// Если редактирование не удалось, отправляем новое сообщение
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, sb.String())
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
+	}
+
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "Поиск завершен")
+	h.bot.Request(callbackConfig)
 }
 
 // handleDaySelection обрабатывает выбор дня для поиска

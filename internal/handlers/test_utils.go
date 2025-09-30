@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/drerr0r/vetbot/pkg/utils"
@@ -20,11 +21,13 @@ type MockDatabase struct {
 	Veterinarians        map[int]*models.Veterinarian
 	Clinics              map[int]*models.Clinic
 	Schedules            map[int]*models.Schedule
+	Cities               map[int]*models.City
 	UserError            error
 	SpecializationsError error
 	VeterinariansError   error
 	ClinicsError         error
 	SchedulesError       error
+	CitiesError          error
 }
 
 // NewMockDatabase создает новый мок базы данных
@@ -35,6 +38,7 @@ func NewMockDatabase() *MockDatabase {
 		Veterinarians:   make(map[int]*models.Veterinarian),
 		Clinics:         make(map[int]*models.Clinic),
 		Schedules:       make(map[int]*models.Schedule),
+		Cities:          make(map[int]*models.City),
 	}
 }
 
@@ -195,6 +199,22 @@ func (m *MockDatabase) FindAvailableVets(criteria *models.SearchCriteria) ([]*mo
 			}
 		}
 
+		// Фильтрация по городу
+		if criteria.CityID > 0 {
+			hasCity := false
+			for _, schedule := range m.Schedules {
+				if schedule.VetID == vet.ID {
+					// Здесь должна быть логика проверки города через клинику
+					// Для упрощения считаем, что все врачи работают в указанном городе
+					hasCity = true
+					break
+				}
+			}
+			if !hasCity {
+				continue
+			}
+		}
+
 		result = append(result, vet)
 	}
 
@@ -233,6 +253,149 @@ func (m *MockDatabase) AddMissingColumns() error {
 	return nil
 }
 
+// ============================================================================
+// НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С ГОРОДАМИ
+// ============================================================================
+
+// GetAllCities возвращает все города
+func (m *MockDatabase) GetAllCities() ([]*models.City, error) {
+	if m.CitiesError != nil {
+		return nil, m.CitiesError
+	}
+
+	result := make([]*models.City, 0, len(m.Cities))
+	for _, city := range m.Cities {
+		result = append(result, city)
+	}
+	return result, nil
+}
+
+// GetCityByID возвращает город по ID
+func (m *MockDatabase) GetCityByID(id int) (*models.City, error) {
+	city, exists := m.Cities[id]
+	if !exists {
+		return nil, sql.ErrNoRows
+	}
+	return city, nil
+}
+
+// GetCityByName возвращает город по названию
+func (m *MockDatabase) GetCityByName(name string) (*models.City, error) {
+	for _, city := range m.Cities {
+		if city.Name == name {
+			return city, nil
+		}
+	}
+	return nil, sql.ErrNoRows
+}
+
+// CreateCity создает новый город
+func (m *MockDatabase) CreateCity(city *models.City) error {
+	if m.CitiesError != nil {
+		return m.CitiesError
+	}
+
+	// Генерируем ID если не установлен
+	if city.ID == 0 {
+		city.ID = len(m.Cities) + 1
+	}
+
+	m.Cities[city.ID] = city
+	return nil
+}
+
+// GetClinicsByCity возвращает клиники по городу
+func (m *MockDatabase) GetClinicsByCity(cityID int) ([]*models.Clinic, error) {
+	result := make([]*models.Clinic, 0)
+	for _, clinic := range m.Clinics {
+		if clinic.CityID.Valid && int(clinic.CityID.Int64) == cityID {
+			result = append(result, clinic)
+		}
+	}
+	return result, nil
+}
+
+// FindVetsByCity ищет врачей по городу
+func (m *MockDatabase) FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Veterinarian, error) {
+	// Используем существующую логику поиска
+	return m.FindAvailableVets(criteria)
+}
+
+// GetCitiesByRegion возвращает города по региону
+func (m *MockDatabase) GetCitiesByRegion(region string) ([]*models.City, error) {
+	result := make([]*models.City, 0)
+	for _, city := range m.Cities {
+		if city.Region == region {
+			result = append(result, city)
+		}
+	}
+	return result, nil
+}
+
+// SearchCities ищет города по названию
+func (m *MockDatabase) SearchCities(queryStr string) ([]*models.City, error) {
+	result := make([]*models.City, 0)
+	for _, city := range m.Cities {
+		if containsIgnoreCase(city.Name, queryStr) {
+			result = append(result, city)
+		}
+	}
+	return result, nil
+}
+
+// CreateClinicWithCity создает клинику с привязкой к городу
+func (m *MockDatabase) CreateClinicWithCity(clinic *models.Clinic) error {
+	if m.ClinicsError != nil {
+		return m.ClinicsError
+	}
+
+	// Генерируем ID если не установлен
+	if clinic.ID == 0 {
+		clinic.ID = len(m.Clinics) + 1
+	}
+
+	m.Clinics[clinic.ID] = clinic
+	return nil
+}
+
+// GetAllClinicsWithCities возвращает все клиники с информацией о городах
+func (m *MockDatabase) GetAllClinicsWithCities() ([]*models.Clinic, error) {
+	result := make([]*models.Clinic, 0, len(m.Clinics))
+	for _, clinic := range m.Clinics {
+		if clinic.CityID.Valid {
+			if city, exists := m.Cities[int(clinic.CityID.Int64)]; exists {
+				clinic.City = city
+			}
+		}
+		result = append(result, clinic)
+	}
+	return result, nil
+}
+
+// UpdateClinic обновляет данные клиники
+func (m *MockDatabase) UpdateClinic(clinic *models.Clinic) error {
+	if m.ClinicsError != nil {
+		return m.ClinicsError
+	}
+
+	if _, exists := m.Clinics[clinic.ID]; !exists {
+		return sql.ErrNoRows
+	}
+
+	m.Clinics[clinic.ID] = clinic
+	return nil
+}
+
+// ============================================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================================================
+
+func containsIgnoreCase(s, substr string) bool {
+	sLower := strings.ToLower(s)
+	substrLower := strings.ToLower(substr)
+	return strings.Contains(sLower, substrLower)
+}
+
 // AddTestVeterinarian добавляет тестового ветеринара
 func (m *MockDatabase) AddTestVeterinarian(id int, firstName, lastName, phone string) {
 	m.Veterinarians[id] = &models.Veterinarian{
@@ -249,6 +412,26 @@ func (m *MockDatabase) AddTestSpecialization(id int, name string) {
 	m.Specializations[id] = &models.Specialization{
 		ID:   id,
 		Name: name,
+	}
+}
+
+// AddTestCity добавляет тестовый город
+func (m *MockDatabase) AddTestCity(id int, name, region string) {
+	m.Cities[id] = &models.City{
+		ID:     id,
+		Name:   name,
+		Region: region,
+	}
+}
+
+// AddTestClinic добавляет тестовую клинику
+func (m *MockDatabase) AddTestClinic(id int, name, address string, cityID int) {
+	m.Clinics[id] = &models.Clinic{
+		ID:       id,
+		Name:     name,
+		Address:  address,
+		CityID:   sql.NullInt64{Int64: int64(cityID), Valid: true},
+		IsActive: true,
 	}
 }
 
@@ -376,12 +559,10 @@ func CreateTestConfig() *utils.Config {
 // CreateTestMainHandlers создает тестовые MainHandler
 func CreateTestMainHandlers() (*MainHandler, *MockBot) {
 	mockBot := NewMockBot()
-
-	// Создаем nil базу данных для тестов
-	var db Database = nil
+	mockDB := NewMockDatabase()
 	config := CreateTestConfig()
 
-	mainHandler := NewMainHandler(mockBot, db, config)
+	mainHandler := NewMainHandler(mockBot, mockDB, config)
 	return mainHandler, mockBot
 }
 

@@ -30,4 +30,21 @@ type Database interface {
 	AddMissingColumns() error
 	Close() error
 	GetDB() *sql.DB // Исправлено: возвращаем конкретный тип
+
+	// Новые методы для работы с городами
+	GetAllCities() ([]*models.City, error)
+	GetCityByID(id int) (*models.City, error)
+	GetCityByName(name string) (*models.City, error)
+	CreateCity(city *models.City) error
+
+	// Новые методы для расширенного поиска
+	GetClinicsByCity(cityID int) ([]*models.Clinic, error)
+	FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Veterinarian, error)
+	GetCitiesByRegion(region string) ([]*models.City, error)
+	SearchCities(queryStr string) ([]*models.City, error)
+
+	// Новые методы для работы с клиниками
+	CreateClinicWithCity(clinic *models.Clinic) error
+	GetAllClinicsWithCities() ([]*models.Clinic, error)
+	UpdateClinic(clinic *models.Clinic) error
 }

@@ -43,10 +43,11 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 			tgbotapi.NewKeyboardButton("🏥 Управление клиниками"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("📥 Импорт данных"),
 			tgbotapi.NewKeyboardButton("📊 Статистика"),
-			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
 			tgbotapi.NewKeyboardButton("❌ Выйти из админки"),
 		),
 	)
@@ -81,6 +82,8 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleVetManagement(update, text)
 	case "clinic_management":
 		h.handleClinicManagement(update, text)
+	case "import_menu":
+		h.handleImportMenu(update, text)
 	case "add_vet_name":
 		h.handleAddVetName(update, text)
 	case "add_vet_phone":
@@ -121,7 +124,7 @@ func (h *AdminHandlers) handleBackButton(update tgbotapi.Update) {
 
 	// Определяем текущее состояние и возвращаемся на уровень выше
 	switch currentState {
-	case "vet_management", "clinic_management":
+	case "vet_management", "clinic_management", "import_menu":
 		// Возврат из подменю в главное меню
 		h.adminState[userID] = "main_menu"
 		h.HandleAdmin(update)
@@ -161,6 +164,8 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showVetManagement(update)
 	case "🏥 Управление клиниками":
 		h.showClinicManagement(update)
+	case "📥 Импорт данных":
+		h.showImportMenu(update)
 	case "📊 Статистика":
 		h.HandleStats(update)
 	case "⚙️ Настройки":
@@ -174,11 +179,104 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 	}
 }
 
+// showImportMenu показывает меню импорта данных
+func (h *AdminHandlers) showImportMenu(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "import_menu"
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏙️ Импорт городов"),
+			tgbotapi.NewKeyboardButton("👥 Импорт врачей"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏥 Импорт клиник"),
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"📥 *Импорт данных*\n\nВыберите тип данных для импорта. Поддерживаются CSV и Excel файлы.\n\n"+
+			"*Формат файлов:*\n"+
+			"• CSV: разделитель - точка с запятой\n"+
+			"• Excel: первый лист с данными")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
+}
+
+// handleImportMenu обрабатывает меню импорта
+func (h *AdminHandlers) handleImportMenu(update tgbotapi.Update, text string) {
+	switch text {
+	case "🏙️ Импорт городов":
+		h.handleImportCities(update)
+	case "👥 Импорт врачей":
+		h.handleImportVeterinarians(update)
+	case "🏥 Импорт клиник":
+		h.handleImportClinics(update)
+	case "🔙 Назад":
+		h.handleBackButton(update)
+	default:
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Используйте кнопки меню импорта")
+		h.bot.Send(msg)
+	}
+}
+
+// handleImportCities обрабатывает импорт городов
+func (h *AdminHandlers) handleImportCities(update tgbotapi.Update) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"📤 Для импорта городов отправьте CSV или Excel файл со следующими колонками:\n\n"+
+			"1. *Название города* (обязательно)\n"+
+			"2. *Регион* (обязательно)\n\n"+
+			"*Пример CSV:*\n"+
+			"Москва;Центральный федеральный округ\n"+
+			"Санкт-Петербург;Северо-Западный федеральный округ")
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// handleImportVeterinarians обрабатывает импорт врачей
+func (h *AdminHandlers) handleImportVeterinarians(update tgbotapi.Update) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"📤 Для импорта врачей отправьте CSV или Excel файл со следующими колонками:\n\n"+
+			"1. *Имя* (обязательно)\n"+
+			"2. *Фамилия* (обязательно)\n"+
+			"3. *Телефон* (обязательно)\n"+
+			"4. *Email* (опционально)\n"+
+			"5. *Опыт работы* (опционально, число)\n"+
+			"6. *Описание* (опционально)\n"+
+			"7. *Специализации* (опционально, через запятую)\n\n"+
+			"*Пример CSV:*\n"+
+			"Иван;Петров;+79161234567;ivan@vet.ru;10;Опытный хирург;Хирург,Терапевт")
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// handleImportClinics обрабатывает импорт клиник
+func (h *AdminHandlers) handleImportClinics(update tgbotapi.Update) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"📤 Для импорта клиник отправьте CSV или Excel файл со следующими колонками:\n\n"+
+			"1. *Название* (обязательно)\n"+
+			"2. *Город* (обязательно)\n"+
+			"3. *Адрес* (обязательно)\n"+
+			"4. *Телефон* (опционально)\n"+
+			"5. *Часы работы* (опционально)\n"+
+			"6. *Район* (опционально)\n"+
+			"7. *Станция метро* (опционально)\n\n"+
+			"*Пример CSV:*\n"+
+			"ВетКлиника Центр;Москва;ул. Центральная, д.1;+74950000001;Пн-Пт 9-21;Центральный;Охотный ряд")
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
 // handleVetManagement обрабатывает меню управления врачами
 func (h *AdminHandlers) handleVetManagement(update tgbotapi.Update, text string) {
 	switch text {
 	case "➕ Добавить врача":
 		h.startAddVet(update)
+	case "🌍 Поиск по городу":
+		h.handleVetSearchByCity(update)
 	case "📋 Список врачей":
 		h.showVetList(update)
 	case "🔙 Назад":
@@ -188,6 +286,43 @@ func (h *AdminHandlers) handleVetManagement(update tgbotapi.Update, text string)
 			"Используйте кнопки меню управления врачами")
 		h.bot.Send(msg)
 	}
+}
+
+// handleVetSearchByCity обрабатывает поиск врачей по городу
+func (h *AdminHandlers) handleVetSearchByCity(update tgbotapi.Update) {
+	cities, err := h.db.GetAllCities()
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка городов")
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(cities) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Городы не найдены. Сначала импортируйте города.")
+		h.bot.Send(msg)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🏙️ *Выберите город для поиска врачей:*\n\n")
+
+	for i, city := range cities {
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, city.Name, city.Region))
+	}
+
+	sb.WriteString("\nВведите номер города:")
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
 }
 
 // handleClinicManagement обрабатывает меню управления клиниками
@@ -218,9 +353,10 @@ func (h *AdminHandlers) showVetManagement(update tgbotapi.Update) {
 	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("➕ Добавить врача"),
-			tgbotapi.NewKeyboardButton("📋 Список врачей"),
+			tgbotapi.NewKeyboardButton("🌍 Поиск по городу"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("📋 Список врачей"),
 			tgbotapi.NewKeyboardButton("🔙 Назад"),
 		),
 	)
@@ -425,7 +561,6 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 
 // handleVetListSelection обрабатывает выбор врача из списка
 func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text string) {
-
 	// Парсим номер врача
 	index, err := strconv.Atoi(text)
 	if err != nil || index < 1 {

@@ -497,3 +497,148 @@ func (d *Database) UpdateClinic(clinic *models.Clinic) error {
 	)
 	return err
 }
+
+// GetClinicsByCity возвращает клиники по городу
+func (d *Database) GetClinicsByCity(cityID int) ([]*models.Clinic, error) {
+	query := `
+        SELECT c.id, c.name, c.address, c.phone, c.working_hours, 
+               c.is_active, c.city_id, c.district, c.metro_station, c.created_at
+        FROM clinics c
+        WHERE c.city_id = $1 AND c.is_active = true
+        ORDER BY c.name`
+
+	rows, err := d.db.Query(query, cityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var clinics []*models.Clinic
+	for rows.Next() {
+		var clinic models.Clinic
+		err := rows.Scan(&clinic.ID, &clinic.Name, &clinic.Address, &clinic.Phone,
+			&clinic.WorkingHours, &clinic.IsActive, &clinic.CityID,
+			&clinic.District, &clinic.MetroStation, &clinic.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		clinics = append(clinics, &clinic)
+	}
+
+	return clinics, nil
+}
+
+// FindVetsByCity ищет врачей по городу с дополнительными критериями
+func (d *Database) FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Veterinarian, error) {
+	query := `
+        SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email, 
+               v.description, v.experience_years, v.is_active, v.created_at
+        FROM veterinarians v
+        INNER JOIN vet_specializations vs ON v.id = vs.vet_id
+        INNER JOIN schedules s ON v.id = s.vet_id
+        INNER JOIN clinics c ON s.clinic_id = c.id
+        WHERE v.is_active = true AND s.is_available = true`
+
+	args := []interface{}{}
+	argCount := 0
+
+	if criteria.CityID > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND c.city_id = $%d", argCount)
+		args = append(args, criteria.CityID)
+	}
+
+	if criteria.SpecializationID > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND vs.specialization_id = $%d", argCount)
+		args = append(args, criteria.SpecializationID)
+	}
+
+	if criteria.DayOfWeek > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND s.day_of_week = $%d", argCount)
+		args = append(args, criteria.DayOfWeek)
+	}
+
+	if criteria.District != "" {
+		argCount++
+		query += fmt.Sprintf(" AND LOWER(c.district) = LOWER($%d)", argCount)
+		args = append(args, criteria.District)
+	}
+
+	if criteria.MetroStation != "" {
+		argCount++
+		query += fmt.Sprintf(" AND LOWER(c.metro_station) = LOWER($%d)", argCount)
+		args = append(args, criteria.MetroStation)
+	}
+
+	query += " ORDER BY v.first_name, v.last_name"
+
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var veterinarians []*models.Veterinarian
+	for rows.Next() {
+		var vet models.Veterinarian
+		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		// Загружаем специализации для каждого врача
+		specs, err := d.GetSpecializationsByVetID(vet.ID)
+		if err == nil {
+			vet.Specializations = specs
+		}
+
+		veterinarians = append(veterinarians, &vet)
+	}
+
+	return veterinarians, nil
+}
+
+// GetCitiesByRegion возвращает города по региону
+func (d *Database) GetCitiesByRegion(region string) ([]*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities WHERE LOWER(region) LIKE LOWER($1) ORDER BY name`
+	rows, err := d.db.Query(query, "%"+region+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cities []*models.City
+	for rows.Next() {
+		var city models.City
+		err := rows.Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		cities = append(cities, &city)
+	}
+	return cities, nil
+}
+
+// SearchCities ищет города по названию
+func (d *Database) SearchCities(queryStr string) ([]*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities WHERE LOWER(name) LIKE LOWER($1) ORDER BY name`
+	rows, err := d.db.Query(query, "%"+queryStr+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cities []*models.City
+	for rows.Next() {
+		var city models.City
+		err := rows.Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		cities = append(cities, &city)
+	}
+	return cities, nil
+}

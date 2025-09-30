@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler 
 		db:            db,
 		config:        config,
 		vetHandlers:   NewVetHandlers(bot, db),
-		adminHandlers: NewAdminHandlers(bot, db, config), // Исправлено количество аргументов
+		adminHandlers: NewAdminHandlers(bot, db, config),
 	}
 }
 
@@ -37,6 +38,13 @@ func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	if update.CallbackQuery != nil {
 		log.Printf("Callback query: %s", update.CallbackQuery.Data)
 		h.vetHandlers.HandleCallback(update)
+		return
+	}
+
+	// Обрабатываем документы (файлы для импорта)
+	if update.Message != nil && update.Message.Document != nil {
+		log.Printf("Document received: %s", update.Message.Document.FileName)
+		h.handleDocument(update)
 		return
 	}
 
@@ -101,6 +109,9 @@ func (h *MainHandler) handleCommand(update tgbotapi.Update, isAdmin bool) {
 	case "clinics":
 		log.Printf("Executing /clinics")
 		h.vetHandlers.HandleClinics(update)
+	case "cities":
+		log.Printf("Executing /cities")
+		h.vetHandlers.HandleSearchByCity(update)
 	case "help":
 		log.Printf("Executing /help")
 		h.vetHandlers.HandleHelp(update)
@@ -153,6 +164,55 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	// Для обычных пользователей показываем справку
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		"Я понимаю только команды. Используйте /help для списка доступных команд.")
+	h.bot.Send(msg)
+}
+
+// handleDocument обрабатывает загружаемые документы (CSV/Excel для импорта)
+func (h *MainHandler) handleDocument(update tgbotapi.Update) {
+	fileName := update.Message.Document.FileName
+
+	log.Printf("Received document: %s", fileName)
+
+	// Проверяем расширение файла
+	if !strings.HasSuffix(strings.ToLower(fileName), ".csv") &&
+		!strings.HasSuffix(strings.ToLower(fileName), ".xlsx") {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"❌ Поддерживаются только CSV и Excel файлы (.csv, .xlsx)")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Проверяем, является ли пользователь администратором
+	if !h.isAdmin(update.Message.From.ID) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"❌ Импорт данных доступен только администраторам")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Определяем тип импорта по имени файла
+	var importType string
+	if strings.Contains(strings.ToLower(fileName), "город") {
+		importType = "cities"
+	} else if strings.Contains(strings.ToLower(fileName), "врач") {
+		importType = "veterinarians"
+	} else if strings.Contains(strings.ToLower(fileName), "клиник") {
+		importType = "clinics"
+	} else {
+		// Если не удалось определить тип, просим уточнить
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"📥 Файл получен. Укажите тип импорта:\n\n"+
+				"• Для городов: файл должен содержать 'город' в названии\n"+
+				"• Для врачей: файл должен содержать 'врач' в названии\n"+
+				"• Для клиник: файл должен содержать 'клиник' в названии")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Здесь будет логика скачивания и обработки файла
+	// Пока просто отправляем сообщение о получении файла
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("📥 Файл '%s' получен для импорта %s.\n\nФункция импорта в разработке.", fileName, importType))
 	h.bot.Send(msg)
 }
 
