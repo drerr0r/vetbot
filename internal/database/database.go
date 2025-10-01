@@ -165,7 +165,7 @@ func (d *Database) GetSpecializationsByVetID(vetID int) ([]*models.Specializatio
 
 // GetAllClinics возвращает все клиники
 func (d *Database) GetAllClinics() ([]*models.Clinic, error) {
-	query := "SELECT id, name, address, phone, working_hours, is_active, created_at FROM clinics ORDER BY name"
+	query := "SELECT id, name, address, phone, working_hours, is_active, city_id, district, metro_station, created_at FROM clinics ORDER BY name"
 	rows, err := d.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -175,11 +175,19 @@ func (d *Database) GetAllClinics() ([]*models.Clinic, error) {
 	var clinics []*models.Clinic
 	for rows.Next() {
 		var clinic models.Clinic
-		err := rows.Scan(&clinic.ID, &clinic.Name, &clinic.Address, &clinic.Phone,
-			&clinic.WorkingHours, &clinic.IsActive, &clinic.CreatedAt)
+		var cityID sql.NullInt64
+		var phone, workingHours sql.NullString
+
+		err := rows.Scan(&clinic.ID, &clinic.Name, &clinic.Address, &phone,
+			&workingHours, &clinic.IsActive, &cityID,
+			&clinic.District, &clinic.MetroStation, &clinic.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
+
+		clinic.Phone = phone
+		clinic.WorkingHours = workingHours
+		clinic.CityID = cityID
 		clinics = append(clinics, &clinic)
 	}
 

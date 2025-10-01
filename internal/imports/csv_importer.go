@@ -85,6 +85,27 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string, InfoL
 
 	InfoLog.Printf("✅ Справочники загружены: %d городов, %d специализаций, %d клиник", len(cities), len(specializations), len(clinics))
 
+	InfoLog.Printf("🔍 Отладка - загруженные клиники:")
+	for _, clinic := range clinics {
+		district := "не указан"
+		if clinic.District.Valid {
+			district = clinic.District.String
+		}
+
+		metro := "не указана"
+		if clinic.MetroStation.Valid {
+			metro = clinic.MetroStation.String
+		}
+
+		InfoLog.Printf("   Клиника: %s (ID: %d, CityID: %v, District: %s, Metro: %s)",
+			clinic.Name, clinic.ID, clinic.CityID, district, metro)
+	}
+
+	InfoLog.Printf("🔍 Отладка - загруженные города:")
+	for _, city := range cities {
+		InfoLog.Printf("   Город: %s (ID: %d, Region: %s)", city.Name, city.ID, city.Region)
+	}
+
 	for idx, record := range records {
 		if idx == 0 {
 			InfoLog.Printf("🔤 Пропускаем заголовок: %v", record)
@@ -224,14 +245,17 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 		InfoLog.Printf("✅ Строка %d: добавлено %d специализаций", rowNum, specCount)
 	}
 
-	// Обрабатываем клиники и расписание (колонка 8)
+	// Обрабатываем клиники и расписание (колонка 8) - С ОБРАБОТКОЙ ОШИБОК
 	if len(record) > 8 && record[8] != "" {
 		clinicSchedules := strings.Split(record[8], ";")
 		scheduleCount := 0
+		scheduleErrors := 0
+
 		for _, clinicSchedule := range clinicSchedules {
 			parts := strings.Split(clinicSchedule, ":")
 			if len(parts) < 2 {
 				ErrorLog.Printf("⚠️ Строка %d: неверный формат расписания '%s'", rowNum, clinicSchedule)
+				scheduleErrors++
 				continue
 			}
 
@@ -241,27 +265,34 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 			clinicID, exists := clinicMap[strings.ToLower(clinicName)]
 			if !exists {
 				ErrorLog.Printf("⚠️ Строка %d: клиника '%s' не найдена", rowNum, clinicName)
+				scheduleErrors++
 				continue
 			}
 
-			InfoLog.Printf("🏥 Строка %d: обработка клиники '%s'", rowNum, clinicName)
+			InfoLog.Printf("🏥 Строка %d: обработка клиники '%s' (ID: %d)", rowNum, clinicName, clinicID)
 
 			// Парсим расписание
 			schedules := i.parseSchedule(scheduleStr, vet.ID, clinicID)
 			for _, schedule := range schedules {
 				_, err = tx.Exec(
 					`INSERT INTO schedules (vet_id, clinic_id, day_of_week, start_time, end_time, is_available) 
-					 VALUES ($1, $2, $3, $4, $5, $6)`,
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
 					schedule.VetID, schedule.ClinicID, schedule.DayOfWeek, schedule.StartTime, schedule.EndTime, schedule.IsAvailable,
 				)
 				if err != nil {
 					ErrorLog.Printf("⚠️ Строка %d: ошибка добавления расписания: %v", rowNum, err)
+					scheduleErrors++
 				} else {
 					scheduleCount++
 				}
 			}
 		}
-		InfoLog.Printf("📅 Строка %d: добавлено %d записей расписания", rowNum, scheduleCount)
+		InfoLog.Printf("📅 Строка %d: добавлено %d записей расписания, ошибок: %d", rowNum, scheduleCount, scheduleErrors)
+
+		// НЕ ПРЕРЫВАЕМ ИМПОРТ ИЗ-ЗА ОШИБОК РАСПИСАНИЯ
+		if scheduleErrors > 0 {
+			InfoLog.Printf("⚠️ Строка %d: есть ошибки расписания, но врач добавлен", rowNum)
+		}
 	}
 
 	err = tx.Commit()
