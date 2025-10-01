@@ -25,10 +25,22 @@ func NewCSVImporter(db *database.Database) *CSVImporter {
 }
 
 // ImportVeterinarians импортирует врачей из CSV/Excel с поддержкой городов, клиник и расписания
-func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*models.ImportResult, error) {
+func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string, InfoLog, ErrorLog *log.Logger) (*models.ImportResult, error) {
+	InfoLog.Printf("🚀 Начало импорта файла: %s", filename)
+
 	records, err := i.readFile(file, filename)
 	if err != nil {
+		ErrorLog.Printf("❌ Ошибка чтения файла: %v", err)
 		return nil, err
+	}
+
+	InfoLog.Printf("📊 Прочитано строк: %d", len(records))
+
+	if len(records) > 0 {
+		InfoLog.Printf("📋 Заголовки: %v", records[0])
+	} else {
+		ErrorLog.Printf("❌ Файл %s пустой", filename)
+		return nil, fmt.Errorf("файл пустой")
 	}
 
 	result := &models.ImportResult{
@@ -37,18 +49,22 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 	}
 
 	// Предзагружаем справочники для быстрого поиска
+	InfoLog.Printf("🔍 Загрузка справочников...")
 	cities, err := i.db.GetAllCities()
 	if err != nil {
+		ErrorLog.Printf("❌ Ошибка загрузки городов: %v", err)
 		return nil, fmt.Errorf("ошибка загрузки городов: %w", err)
 	}
 
 	specializations, err := i.db.GetAllSpecializations()
 	if err != nil {
+		ErrorLog.Printf("❌ Ошибка загрузки специализаций: %v", err)
 		return nil, fmt.Errorf("ошибка загрузки специализаций: %w", err)
 	}
 
 	clinics, err := i.db.GetAllClinics()
 	if err != nil {
+		ErrorLog.Printf("❌ Ошибка загрузки клиник: %v", err)
 		return nil, fmt.Errorf("ошибка загрузки клиник: %w", err)
 	}
 
@@ -67,8 +83,11 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 		clinicMap[strings.ToLower(clinic.Name)] = clinic.ID
 	}
 
+	InfoLog.Printf("✅ Справочники загружены: %d городов, %d специализаций, %d клиник", len(cities), len(specializations), len(clinics))
+
 	for idx, record := range records {
 		if idx == 0 {
+			InfoLog.Printf("🔤 Пропускаем заголовок: %v", record)
 			continue // Пропускаем заголовок
 		}
 
@@ -79,8 +98,11 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 				Field:     "all",
 				Message:   fmt.Sprintf("Недостаточно колонок (требуется минимум 7, получено %d)", len(record)),
 			})
+			ErrorLog.Printf("❌ Строка %d: недостаточно колонок (%d вместо 7)", idx+1, len(record))
 			continue
 		}
+
+		InfoLog.Printf("📝 Обрабатываем строку %d: %v", idx+1, record)
 
 		// Парсим данные врача
 		vet := &models.Veterinarian{
@@ -95,12 +117,18 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 		if record[4] != "" {
 			if exp, err := strconv.ParseInt(strings.TrimSpace(record[4]), 10, 64); err == nil {
 				vet.ExperienceYears = sql.NullInt64{Int64: exp, Valid: true}
+				InfoLog.Printf("💼 Строка %d: опыт работы %d лет", idx+1, exp)
+			} else {
+				ErrorLog.Printf("⚠️ Строка %d: неверный формат опыта работы '%s'", idx+1, record[4])
 			}
 		}
 
 		// Описание
 		if len(record) > 5 {
 			vet.Description = i.parseNullString(record[5])
+			if vet.Description.Valid {
+				InfoLog.Printf("📄 Строка %d: описание добавлено", idx+1)
+			}
 		}
 
 		// Город
@@ -108,6 +136,7 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 			cityName := strings.TrimSpace(record[6])
 			if id, exists := cityMap[strings.ToLower(cityName)]; exists {
 				vet.CityID = sql.NullInt64{Int64: int64(id), Valid: true}
+				InfoLog.Printf("🏙️ Строка %d: город '%s' найден (ID: %d)", idx+1, cityName, id)
 			} else {
 				result.ErrorCount++
 				result.Errors = append(result.Errors, models.ImportError{
@@ -115,12 +144,15 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 					Field:     "city",
 					Message:   fmt.Sprintf("Город '%s' не найден в базе", cityName),
 				})
+				ErrorLog.Printf("❌ Строка %d: город '%s' не найден в базе", idx+1, cityName)
 				continue
 			}
+		} else {
+			ErrorLog.Printf("⚠️ Строка %d: город не указан", idx+1)
 		}
 
 		// Добавляем врача в базу со всеми связями
-		err := i.addVeterinarianWithRelations(vet, record, specMap, clinicMap, idx+1)
+		err := i.addVeterinarianWithRelations(vet, record, specMap, clinicMap, idx+1, InfoLog, ErrorLog)
 		if err != nil {
 			result.ErrorCount++
 			result.Errors = append(result.Errors, models.ImportError{
@@ -128,18 +160,23 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string) (*mod
 				Field:     "database",
 				Message:   fmt.Sprintf("Ошибка сохранения: %v", err),
 			})
+			ErrorLog.Printf("❌ Строка %d: ошибка сохранения врача: %v", idx+1, err)
 		} else {
 			result.SuccessCount++
+			InfoLog.Printf("✅ Строка %d: врач %s %s успешно добавлен (ID: %d)", idx+1, vet.FirstName, vet.LastName, vet.ID)
 		}
 	}
 
+	InfoLog.Printf("🎯 Импорт завершен. Успешно: %d, Ошибок: %d, Всего строк: %d",
+		result.SuccessCount, result.ErrorCount, result.TotalRows)
 	return result, nil
 }
 
 // addVeterinarianWithRelations добавляет врача со специализациями, клиниками и расписанием
-func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, record []string, specMap, clinicMap map[string]int, rowNum int) error {
+func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, record []string, specMap, clinicMap map[string]int, rowNum int, InfoLog, ErrorLog *log.Logger) error {
 	tx, err := i.db.GetDB().Begin()
 	if err != nil {
+		ErrorLog.Printf("❌ Строка %d: ошибка начала транзакции: %v", rowNum, err)
 		return err
 	}
 	defer tx.Rollback()
@@ -151,12 +188,16 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 	err = tx.QueryRow(query, vet.FirstName, vet.LastName, vet.Phone, vet.Email,
 		vet.ExperienceYears, vet.Description, vet.CityID, vet.IsActive).Scan(&vet.ID)
 	if err != nil {
+		ErrorLog.Printf("❌ Строка %d: ошибка добавления врача в БД: %v", rowNum, err)
 		return fmt.Errorf("ошибка добавления врача: %w", err)
 	}
+
+	InfoLog.Printf("👨‍⚕️ Строка %d: врач добавлен в БД с ID: %d", rowNum, vet.ID)
 
 	// Обрабатываем специализации (колонка 7)
 	if len(record) > 7 && record[7] != "" {
 		specNames := strings.Split(record[7], ",")
+		specCount := 0
 		for _, specName := range specNames {
 			specName = strings.TrimSpace(specName)
 			if specName == "" {
@@ -165,7 +206,7 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 
 			specID, exists := specMap[strings.ToLower(specName)]
 			if !exists {
-				log.Printf("Специализация '%s' не найдена в строке %d", specName, rowNum)
+				ErrorLog.Printf("⚠️ Строка %d: специализация '%s' не найдена", rowNum, specName)
 				continue
 			}
 
@@ -174,17 +215,23 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 				vet.ID, specID,
 			)
 			if err != nil {
-				log.Printf("Ошибка добавления специализации %s для врача %d: %v", specName, vet.ID, err)
+				ErrorLog.Printf("⚠️ Строка %d: ошибка добавления специализации '%s': %v", rowNum, specName, err)
+			} else {
+				specCount++
+				InfoLog.Printf("🎯 Строка %d: добавлена специализация '%s'", rowNum, specName)
 			}
 		}
+		InfoLog.Printf("✅ Строка %d: добавлено %d специализаций", rowNum, specCount)
 	}
 
 	// Обрабатываем клиники и расписание (колонка 8)
 	if len(record) > 8 && record[8] != "" {
 		clinicSchedules := strings.Split(record[8], ";")
+		scheduleCount := 0
 		for _, clinicSchedule := range clinicSchedules {
 			parts := strings.Split(clinicSchedule, ":")
 			if len(parts) < 2 {
+				ErrorLog.Printf("⚠️ Строка %d: неверный формат расписания '%s'", rowNum, clinicSchedule)
 				continue
 			}
 
@@ -193,9 +240,11 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 
 			clinicID, exists := clinicMap[strings.ToLower(clinicName)]
 			if !exists {
-				log.Printf("Клиника '%s' не найдена в строке %d", clinicName, rowNum)
+				ErrorLog.Printf("⚠️ Строка %d: клиника '%s' не найдена", rowNum, clinicName)
 				continue
 			}
+
+			InfoLog.Printf("🏥 Строка %d: обработка клиники '%s'", rowNum, clinicName)
 
 			// Парсим расписание
 			schedules := i.parseSchedule(scheduleStr, vet.ID, clinicID)
@@ -206,13 +255,23 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 					schedule.VetID, schedule.ClinicID, schedule.DayOfWeek, schedule.StartTime, schedule.EndTime, schedule.IsAvailable,
 				)
 				if err != nil {
-					log.Printf("Ошибка добавления расписания для врача %d в клинике %d: %v", vet.ID, clinicID, err)
+					ErrorLog.Printf("⚠️ Строка %d: ошибка добавления расписания: %v", rowNum, err)
+				} else {
+					scheduleCount++
 				}
 			}
 		}
+		InfoLog.Printf("📅 Строка %d: добавлено %d записей расписания", rowNum, scheduleCount)
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		ErrorLog.Printf("❌ Строка %d: ошибка коммита транзакции: %v", rowNum, err)
+		return err
+	}
+
+	InfoLog.Printf("💾 Строка %d: транзакция успешно завершена", rowNum)
+	return nil
 }
 
 // parseSchedule парсит строку расписания формата "Пн:9-18,Ср:9-18,Пт:14-20"
