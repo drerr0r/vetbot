@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/drerr0r/vetbot/internal/models"
@@ -11,12 +10,12 @@ import (
 
 // HandleVetDetails отображает детальную информацию о враче
 func (h *VetHandlers) HandleVetDetails(chatID int64, vetID int, messageID int) error {
-	log.Printf("HandleVetDetails called for vet ID: %d", vetID)
+	InfoLog.Printf("HandleVetDetails called for vet ID: %d", vetID)
 
 	// Получаем полную информацию о враче
 	vet, err := h.db.GetVeterinarianWithDetails(vetID)
 	if err != nil {
-		log.Printf("Error getting vet details: %v", err)
+		ErrorLog.Printf("Error getting vet details: %v", err)
 		return fmt.Errorf("failed to get vet details: %v", err)
 	}
 

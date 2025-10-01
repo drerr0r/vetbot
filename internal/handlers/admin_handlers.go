@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +11,11 @@ import (
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+var (
+	InfoLog  = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	ErrorLog = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
 )
 
 // AdminHandlers содержит обработчики для административных функций
@@ -69,7 +75,7 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 	text := update.Message.Text
 	state := h.adminState[userID]
 
-	log.Printf("Admin message from %d: %s (state: %s)", userID, text, state)
+	InfoLog.Printf("Admin message from %d: %s (state: %s)", userID, text, state)
 
 	// Сначала проверяем кнопку "Назад" независимо от состояния
 	if text == "🔙 Назад" {
@@ -1428,7 +1434,7 @@ func (h *AdminHandlers) isValidSpecializationIDs(input string) bool {
 	// Получаем максимальный ID специализации для проверки
 	maxID, err := h.getMaxSpecializationID()
 	if err != nil {
-		log.Printf("Error getting max specialization ID: %v", err)
+		ErrorLog.Printf("Error getting max specialization ID: %v", err)
 		return false
 	}
 
@@ -1456,21 +1462,19 @@ func (h *AdminHandlers) getMaxSpecializationID() (int, error) {
 }
 
 // addVeterinarian добавляет врача в базу данных
+// addVeterinarian добавляет врача в базу данных
 func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText string) error {
-	// Добавляем врача в базу
-	query := `INSERT INTO veterinarians (first_name, last_name, phone, is_active) 
-	          VALUES ($1, $2, $3, $4) RETURNING id`
-
-	err := h.db.GetDB().QueryRow(query, vet.FirstName, vet.LastName, vet.Phone, vet.IsActive).
-		Scan(&vet.ID)
+	// Добавляем врача в базу через метод базы данных
+	err := h.db.CreateVeterinarian(vet)
 	if err != nil {
+		ErrorLog.Printf("Error creating veterinarian: %v", err)
 		return err
 	}
 
 	// Обрабатываем специализации
 	if specsText != "" {
 		specIDs := strings.Split(specsText, ",")
-		log.Printf("Adding vet ID %d with specializations: %v", vet.ID, specIDs)
+		InfoLog.Printf("Adding vet ID %d with specializations: %v", vet.ID, specIDs)
 
 		for _, specIDStr := range specIDs {
 			specID, err := strconv.Atoi(strings.TrimSpace(specIDStr))
@@ -1478,7 +1482,7 @@ func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText stri
 				// Проверяем существование специализации
 				exists, err := h.db.SpecializationExists(specID)
 				if err != nil {
-					log.Printf("Error checking specialization %d: %v", specID, err)
+					ErrorLog.Printf("Error checking specialization %d: %v", specID, err)
 					continue
 				}
 
@@ -1489,12 +1493,12 @@ func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText stri
 						vet.ID, specID,
 					)
 					if err != nil {
-						log.Printf("Error adding specialization %d: %v", specID, err)
+						ErrorLog.Printf("Error adding specialization %d: %v", specID, err)
 					} else {
-						log.Printf("Successfully added specialization %d for vet %d", specID, vet.ID)
+						InfoLog.Printf("Successfully added specialization %d for vet %d", specID, vet.ID)
 					}
 				} else {
-					log.Printf("Specialization %d does not exist", specID)
+					InfoLog.Printf("Specialization %d does not exist", specID)
 				}
 			}
 		}
@@ -1571,7 +1575,7 @@ func (h *AdminHandlers) updateVeterinarianSpecializations(vetID int, specsText s
 						vetID, specID,
 					)
 					if err != nil {
-						log.Printf("Error adding specialization %d: %v", specID, err)
+						ErrorLog.Printf("Error adding specialization %d: %v", specID, err)
 					}
 				}
 			}

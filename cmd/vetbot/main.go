@@ -20,6 +20,9 @@ func main() {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
+	// НАСТРАИВАЕМ ЛОГИРОВАНИЕ
+	utils.SetupLogging(config.Debug)
+
 	log.Printf("Telegram token loaded: %s...", maskToken(config.TelegramToken))
 	log.Printf("Database URL loaded: %s", maskDBPassword(config.DatabaseURL))
 	log.Printf("Debug mode: %t", config.Debug)

@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"log"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -33,7 +31,7 @@ func (h *BotHandlers) HandleErrorMessage(chatID int64, errorMsg string) {
 	h.bot.Send(msg)
 
 	// Логируем ошибку для администратора
-	log.Printf("Error for user %d: %s", chatID, errorMsg)
+	ErrorLog.Printf("Error for user %d: %s", chatID, errorMsg)
 }
 
 // SendWelcomeMessage отправляет приветственное сообщение

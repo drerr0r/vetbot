@@ -3,7 +3,7 @@ package handlers
 import (
 	"fmt"
 	"html"
-	"log"
+
 	"strconv"
 	"strings"
 
@@ -27,7 +27,7 @@ func NewVetHandlers(bot BotAPI, db Database) *VetHandlers {
 
 // HandleStart обрабатывает команду /start
 func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
-	log.Printf("HandleStart called")
+	InfoLog.Printf("HandleStart called")
 
 	// Создаем или обновляем пользователя
 	user := &models.User{
@@ -39,7 +39,7 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 
 	err := h.db.CreateUser(user)
 	if err != nil {
-		log.Printf("Error creating user: %v", err)
+		ErrorLog.Printf("Error creating user: %v", err)
 	}
 
 	// Создаем главное меню с inline-кнопками
@@ -63,18 +63,18 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:`)
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending start message with inline keyboard")
+	InfoLog.Printf("Sending start message with inline keyboard")
 	_, err = h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending start message: %v", err)
+		ErrorLog.Printf("Error sending start message: %v", err)
 	} else {
-		log.Printf("Start message sent successfully")
+		InfoLog.Printf("Start message sent successfully")
 	}
 }
 
 // HandleSpecializations показывает список специализаций с улучшенным интерфейсом
 func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
-	log.Printf("HandleSpecializations called")
+	InfoLog.Printf("HandleSpecializations called")
 
 	var chatID int64
 
@@ -87,19 +87,19 @@ func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		ErrorLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
 	specializations, err := h.db.GetAllSpecializations()
 	if err != nil {
-		log.Printf("Error getting specializations: %v", err)
+		ErrorLog.Printf("Error getting specializations: %v", err)
 		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка специализаций")
 		h.bot.Send(msg)
 		return
 	}
 
-	log.Printf("Found %d specializations", len(specializations))
+	InfoLog.Printf("Found %d specializations", len(specializations))
 
 	if len(specializations) == 0 {
 		msg := tgbotapi.NewMessage(chatID, "Специализации не найдены")
@@ -138,16 +138,16 @@ func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending specializations menu to chat %d", chatID)
+	InfoLog.Printf("Sending specializations menu to chat %d", chatID)
 	_, err = h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending specializations menu: %v", err)
+		ErrorLog.Printf("Error sending specializations menu: %v", err)
 	}
 }
 
 // HandleSearch показывает меню поиска по времени
 func (h *VetHandlers) HandleSearch(update tgbotapi.Update) {
-	log.Printf("HandleSearch called")
+	InfoLog.Printf("HandleSearch called")
 
 	var chatID int64
 
@@ -159,7 +159,7 @@ func (h *VetHandlers) HandleSearch(update tgbotapi.Update) {
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		ErrorLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
@@ -189,16 +189,16 @@ func (h *VetHandlers) HandleSearch(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending search by time menu to chat %d", chatID)
+	InfoLog.Printf("Sending search by time menu to chat %d", chatID)
 	_, err := h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending search menu: %v", err)
+		ErrorLog.Printf("Error sending search menu: %v", err)
 	}
 }
 
 // HandleClinics показывает меню клиник
 func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
-	log.Printf("HandleClinics called")
+	InfoLog.Printf("HandleClinics called")
 
 	var chatID int64
 
@@ -210,19 +210,19 @@ func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		ErrorLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
 	clinics, err := h.db.GetAllClinics()
 	if err != nil {
-		log.Printf("Error getting clinics: %v", err)
+		ErrorLog.Printf("Error getting clinics: %v", err)
 		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка клиник")
 		h.bot.Send(msg)
 		return
 	}
 
-	log.Printf("Found %d clinics", len(clinics))
+	InfoLog.Printf("Found %d clinics", len(clinics))
 
 	if len(clinics) == 0 {
 		msg := tgbotapi.NewMessage(chatID, "Клиники не найдены")
@@ -261,16 +261,16 @@ func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending clinics menu to chat %d", chatID)
+	InfoLog.Printf("Sending clinics menu to chat %d", chatID)
 	_, err = h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending clinics menu: %v", err)
+		ErrorLog.Printf("Error sending clinics menu: %v", err)
 	}
 }
 
 // HandleSearchByCity показывает меню поиска по городам
 func (h *VetHandlers) HandleSearchByCity(update tgbotapi.Update) {
-	log.Printf("HandleSearchByCity called")
+	InfoLog.Printf("HandleSearchByCity called")
 
 	var chatID int64
 
@@ -282,14 +282,14 @@ func (h *VetHandlers) HandleSearchByCity(update tgbotapi.Update) {
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		ErrorLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
 	// Получаем список городов
 	cities, err := h.db.GetAllCities()
 	if err != nil {
-		log.Printf("Error getting cities: %v", err)
+		ErrorLog.Printf("Error getting cities: %v", err)
 		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка городов")
 		h.bot.Send(msg)
 		return
@@ -332,16 +332,16 @@ func (h *VetHandlers) HandleSearchByCity(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending cities menu to chat %d", chatID)
+	InfoLog.Printf("Sending cities menu to chat %d", chatID)
 	_, err = h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending cities menu: %v", err)
+		ErrorLog.Printf("Error sending cities menu: %v", err)
 	}
 }
 
 // HandleHelp показывает справку с кнопкой "Назад"
 func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
-	log.Printf("HandleHelp called")
+	InfoLog.Printf("HandleHelp called")
 
 	var chatID int64
 
@@ -353,7 +353,7 @@ func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		InfoLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
@@ -385,16 +385,16 @@ func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	log.Printf("Sending help message to chat %d", chatID)
+	InfoLog.Printf("Sending help message to chat %d", chatID)
 	_, err := h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending help message: %v", err)
+		ErrorLog.Printf("Error sending help message: %v", err)
 	}
 }
 
 // HandleSearchBySpecialization ищет врачей по специализации с кнопкой "Назад"
 func (h *VetHandlers) HandleSearchBySpecialization(update tgbotapi.Update, specializationID int) {
-	log.Printf("HandleSearchBySpecialization called with ID: %d", specializationID)
+	InfoLog.Printf("HandleSearchBySpecialization called with ID: %d", specializationID)
 
 	var chatID int64
 	var messageID int
@@ -409,23 +409,23 @@ func (h *VetHandlers) HandleSearchBySpecialization(update tgbotapi.Update, speci
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		ErrorLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
 	vets, err := h.db.GetVeterinariansBySpecialization(specializationID)
 	if err != nil {
-		log.Printf("Error getting veterinarians: %v", err)
+		ErrorLog.Printf("Error getting veterinarians: %v", err)
 		msg := tgbotapi.NewMessage(chatID, "Ошибка при поиске врачей")
 		h.bot.Send(msg)
 		return
 	}
 
-	log.Printf("Found %d veterinarians for specialization ID: %d", len(vets), specializationID)
+	InfoLog.Printf("Found %d veterinarians for specialization ID: %d", len(vets), specializationID)
 
 	spec, err := h.db.GetSpecializationByID(specializationID)
 	if err != nil {
-		log.Printf("Error getting specialization: %v", err)
+		ErrorLog.Printf("Error getting specialization: %v", err)
 	}
 
 	// Создаем клавиатуру с кнопкой "Назад"
@@ -465,7 +465,7 @@ func (h *VetHandlers) HandleSearchBySpecialization(update tgbotapi.Update, speci
 		_, err = h.bot.Send(editMsg)
 
 		if err != nil {
-			log.Printf("Error editing message: %v", err)
+			ErrorLog.Printf("Error editing message: %v", err)
 			// Если редактирование не удалось, отправляем новое сообщение
 			msg := tgbotapi.NewMessage(chatID, firstMessage)
 			msg.ParseMode = "Markdown"
@@ -607,7 +607,7 @@ func (h *VetHandlers) sendVetWithDetailsButton(chatID int64, vet *models.Veterin
 
 // HandleSearchByClinic ищет врачей по клинике
 func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int) {
-	log.Printf("HandleSearchByClinic called with ID: %d", clinicID)
+	InfoLog.Printf("HandleSearchByClinic called with ID: %d", clinicID)
 
 	var chatID int64
 	var messageID int
@@ -620,7 +620,7 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 	} else if update.Message != nil {
 		chatID = update.Message.Chat.ID
 	} else {
-		log.Printf("Error: both CallbackQuery and Message are nil")
+		ErrorLog.Printf("Error: both CallbackQuery and Message are nil")
 		return
 	}
 
@@ -630,18 +630,18 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 	}
 	vets, err := h.db.FindAvailableVets(criteria)
 	if err != nil {
-		log.Printf("Error finding vets by clinic: %v", err)
+		ErrorLog.Printf("Error finding vets by clinic: %v", err)
 		msg := tgbotapi.NewMessage(chatID, "Ошибка при поиске врачей")
 		h.bot.Send(msg)
 		return
 	}
 
-	log.Printf("Found %d veterinarians for clinic ID: %d", len(vets), clinicID)
+	InfoLog.Printf("Found %d veterinarians for clinic ID: %d", len(vets), clinicID)
 
 	// Получаем информацию о клинике
 	clinics, err := h.db.GetAllClinics()
 	if err != nil {
-		log.Printf("Error getting clinics: %v", err)
+		ErrorLog.Printf("Error getting clinics: %v", err)
 		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении информации о клинике")
 		h.bot.Send(msg)
 		return
@@ -722,12 +722,12 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 
 // HandleCallback обрабатывает все inline callback запросы
 func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
-	log.Printf("HandleCallback called")
+	InfoLog.Printf("HandleCallback called")
 
 	callback := update.CallbackQuery
 	data := callback.Data
 
-	log.Printf("Callback data: %s", data)
+	InfoLog.Printf("Callback data: %s", data)
 
 	// Обрабатываем разные типы callback данных
 	switch {
@@ -765,17 +765,17 @@ func (h *VetHandlers) handleVetDetailsCallback(callback *tgbotapi.CallbackQuery)
 	vetIDStr := strings.TrimPrefix(callback.Data, "vet_details_")
 	vetID, err := strconv.Atoi(vetIDStr)
 	if err != nil {
-		log.Printf("Error parsing vet ID: %v", err)
+		ErrorLog.Printf("Error parsing vet ID: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
 		h.bot.Request(callbackConfig)
 		return
 	}
 
-	log.Printf("Showing details for vet ID: %d", vetID)
+	InfoLog.Printf("Showing details for vet ID: %d", vetID)
 
 	err = h.HandleVetDetails(callback.Message.Chat.ID, vetID, callback.Message.MessageID)
 	if err != nil {
-		log.Printf("Error showing vet details: %v", err)
+		ErrorLog.Printf("Error showing vet details: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка при загрузке данных")
 		h.bot.Request(callbackConfig)
 		return
@@ -809,7 +809,7 @@ func (h *VetHandlers) showMainMenu(callback *tgbotapi.CallbackQuery) {
 
 	_, err := h.bot.Send(editMsg)
 	if err != nil {
-		log.Printf("Error editing message to main menu: %v", err)
+		ErrorLog.Printf("Error editing message to main menu: %v", err)
 		// Если редактирование не удалось, отправляем новое сообщение
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID,
 			`🐾 Добро пожаловать в VetBot! 🐾
@@ -828,13 +828,13 @@ func (h *VetHandlers) handleSearchSpecCallback(callback *tgbotapi.CallbackQuery)
 	specIDStr := strings.TrimPrefix(callback.Data, "search_spec_")
 	specID, err := strconv.Atoi(specIDStr)
 	if err != nil {
-		log.Printf("Error parsing specialization ID: %v", err)
+		ErrorLog.Printf("Error parsing specialization ID: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
 		h.bot.Request(callbackConfig)
 		return
 	}
 
-	log.Printf("Searching for specialization ID: %d", specID)
+	InfoLog.Printf("Searching for specialization ID: %d", specID)
 
 	// Создаем update для передачи в HandleSearchBySpecialization
 	update := tgbotapi.Update{
@@ -848,13 +848,13 @@ func (h *VetHandlers) handleSearchClinicCallback(callback *tgbotapi.CallbackQuer
 	clinicIDStr := strings.TrimPrefix(callback.Data, "search_clinic_")
 	clinicID, err := strconv.Atoi(clinicIDStr)
 	if err != nil {
-		log.Printf("Error parsing clinic ID: %v", err)
+		ErrorLog.Printf("Error parsing clinic ID: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
 		h.bot.Request(callbackConfig)
 		return
 	}
 
-	log.Printf("Searching for clinic ID: %d", clinicID)
+	InfoLog.Printf("Searching for clinic ID: %d", clinicID)
 
 	update := tgbotapi.Update{
 		CallbackQuery: callback,
@@ -867,13 +867,13 @@ func (h *VetHandlers) handleSearchCityCallback(callback *tgbotapi.CallbackQuery)
 	cityIDStr := strings.TrimPrefix(callback.Data, "search_city_")
 	cityID, err := strconv.Atoi(cityIDStr)
 	if err != nil {
-		log.Printf("Error parsing city ID: %v", err)
+		ErrorLog.Printf("Error parsing city ID: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
 		h.bot.Request(callbackConfig)
 		return
 	}
 
-	log.Printf("Searching for city ID: %d", cityID)
+	InfoLog.Printf("Searching for city ID: %d", cityID)
 
 	criteria := &models.SearchCriteria{
 		CityID: cityID,
@@ -881,18 +881,18 @@ func (h *VetHandlers) handleSearchCityCallback(callback *tgbotapi.CallbackQuery)
 
 	vets, err := h.db.FindVetsByCity(criteria)
 	if err != nil {
-		log.Printf("Error finding vets by city: %v", err)
+		ErrorLog.Printf("Error finding vets by city: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка при поиске врачей")
 		h.bot.Request(callbackConfig)
 		return
 	}
 
-	log.Printf("Found %d vets for city %d", len(vets), cityID)
+	InfoLog.Printf("Found %d vets for city %d", len(vets), cityID)
 
 	// Получаем информацию о городе
 	city, err := h.db.GetCityByID(cityID)
 	if err != nil {
-		log.Printf("Error getting city: %v", err)
+		ErrorLog.Printf("Error getting city: %v", err)
 		city = &models.City{Name: "Неизвестный город"}
 	}
 
@@ -925,7 +925,7 @@ func (h *VetHandlers) handleSearchCityCallback(callback *tgbotapi.CallbackQuery)
 	for i, vet := range vets {
 		err := h.sendVetWithDetailsButton(callback.Message.Chat.ID, vet, i+1)
 		if err != nil {
-			log.Printf("Error sending vet info: %v", err)
+			ErrorLog.Printf("Error sending vet info: %v", err)
 		}
 	}
 
@@ -935,17 +935,17 @@ func (h *VetHandlers) handleSearchCityCallback(callback *tgbotapi.CallbackQuery)
 
 // handleDaySelection обрабатывает выбор дня для поиска
 func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
-	log.Printf("handleDaySelection called")
+	InfoLog.Printf("handleDaySelection called")
 
 	data := callback.Data
 	dayStr := strings.TrimPrefix(data, "search_day_")
 	day, err := strconv.Atoi(dayStr)
 	if err != nil {
-		log.Printf("Error parsing day: %v", err)
+		ErrorLog.Printf("Error parsing day: %v", err)
 		return
 	}
 
-	log.Printf("Searching for day: %d", day)
+	InfoLog.Printf("Searching for day: %d", day)
 
 	criteria := &models.SearchCriteria{
 		DayOfWeek: day,
@@ -953,13 +953,13 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 	vets, err := h.db.FindAvailableVets(criteria)
 	if err != nil {
-		log.Printf("Error finding vets: %v", err)
+		ErrorLog.Printf("Error finding vets: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка при поиске врачей")
 		h.bot.Request(callbackConfig)
 		return
 	}
 
-	log.Printf("Found %d vets for day %d", len(vets), day)
+	InfoLog.Printf("Found %d vets for day %d", len(vets), day)
 
 	// Клавиатура с кнопками навигации
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -1026,7 +1026,7 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 	_, err = h.bot.Send(editMsg)
 	if err != nil {
-		log.Printf("Error sending day search results: %v", err)
+		ErrorLog.Printf("Error sending day search results: %v", err)
 		// Если редактирование не удалось, отправляем новое сообщение
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, sb.String())
 		msg.ParseMode = "Markdown"
@@ -1040,14 +1040,14 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 // HandleTest для тестирования
 func (h *VetHandlers) HandleTest(update tgbotapi.Update) {
-	log.Printf("HandleTest called")
+	InfoLog.Printf("HandleTest called")
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Тестовое сообщение: бот работает!")
 	_, err := h.bot.Send(msg)
 	if err != nil {
-		log.Printf("Error sending test message: %v", err)
+		ErrorLog.Printf("Error sending test message: %v", err)
 	} else {
-		log.Printf("Test message sent successfully")
+		InfoLog.Printf("Test message sent successfully")
 	}
 }
 

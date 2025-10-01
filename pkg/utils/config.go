@@ -88,3 +88,11 @@ func getEnv(key, defaultValue string) string {
 	}
 	return value
 }
+
+func SetupLogging(debug bool) {
+	if debug {
+		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	} else {
+		log.SetFlags(log.Ldate | log.Ltime)
+	}
+}

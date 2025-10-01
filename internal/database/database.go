@@ -693,9 +693,9 @@ func (d *Database) UpdateVeterinarian(vet *models.Veterinarian) error {
 // CreateVeterinarian создает нового врача
 func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
 	query := `INSERT INTO veterinarians 
-		(first_name, last_name, phone, email, description, experience_years, is_active, city_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-		RETURNING id, created_at`
+        (first_name, last_name, phone, email, description, experience_years, is_active, city_id) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+        RETURNING id, created_at`
 
 	return d.db.QueryRow(query,
 		vet.FirstName, vet.LastName, vet.Phone, vet.Email,
