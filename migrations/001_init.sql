@@ -128,6 +128,10 @@ INSERT INTO vet_specializations (vet_id, specialization_id) VALUES
 (3, 2), (3, 6) -- Алексей Кузнецов: Хирург, Кардиолог
 ON CONFLICT (vet_id, specialization_id) DO NOTHING;
 
+-- Очищаем некорректные связи в расписаниях (если есть)
+DELETE FROM schedules WHERE clinic_id NOT IN (SELECT id FROM clinics);
+DELETE FROM schedules WHERE vet_id NOT IN (SELECT id FROM veterinarians);
+
 -- Создаем расписания (только для существующих врачей и клиник)
 INSERT INTO schedules (vet_id, clinic_id, day_of_week, start_time, end_time) VALUES 
 (1, 1, 1, '09:00', '15:00'),
@@ -142,9 +146,6 @@ INSERT INTO schedules (vet_id, clinic_id, day_of_week, start_time, end_time) VAL
 (2, 3, 5, '10:00', '16:00')
 ON CONFLICT DO NOTHING;
 
--- Очищаем некорректные связи в расписаниях (если есть)
-DELETE FROM schedules WHERE clinic_id NOT IN (SELECT id FROM clinics);
-DELETE FROM schedules WHERE vet_id NOT IN (SELECT id FROM veterinarians);
 
 -- Добавляем индексы для улучшения производительности поиска
 CREATE INDEX IF NOT EXISTS idx_clinics_city_id ON clinics(city_id);
