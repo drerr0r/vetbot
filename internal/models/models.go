@@ -39,7 +39,8 @@ type Veterinarian struct {
 	CreatedAt       time.Time         `json:"created_at"`
 
 	// Для удобства - связанные данные
-	City *City `json:"city,omitempty"`
+	City      *City       `json:"city,omitempty"`
+	Schedules []*Schedule `json:"schedules,omitempty"`
 }
 
 // City представляет населенный пункт

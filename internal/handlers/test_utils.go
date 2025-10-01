@@ -697,3 +697,40 @@ func (m *MockDatabase) DeleteVeterinarian(id int) error {
 	delete(m.Veterinarians, id)
 	return nil
 }
+
+// GetVeterinarianWithDetails возвращает врача с полной информацией о городе и клиниках
+func (m *MockDatabase) GetVeterinarianWithDetails(id int) (*models.Veterinarian, error) {
+	if m.VeterinariansError != nil {
+		return nil, m.VeterinariansError
+	}
+
+	vet, exists := m.Veterinarians[id]
+	if !exists {
+		return nil, sql.ErrNoRows
+	}
+
+	// Создаем копию ветеринара, чтобы избежать изменений исходного объекта
+	vetWithDetails := *vet
+
+	// Загружаем специализации
+	specs, err := m.GetSpecializationsByVetID(vet.ID)
+	if err == nil {
+		vetWithDetails.Specializations = specs
+	}
+
+	// Загружаем расписание
+	schedules, err := m.GetSchedulesByVetID(vet.ID)
+	if err == nil {
+		vetWithDetails.Schedules = schedules
+	}
+
+	// Загружаем информацию о городе если есть
+	if vet.CityID.Valid {
+		city, err := m.GetCityByID(int(vet.CityID.Int64))
+		if err == nil {
+			vetWithDetails.City = city
+		}
+	}
+
+	return &vetWithDetails, nil
+}

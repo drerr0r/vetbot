@@ -54,4 +54,7 @@ type Database interface {
 	// Методы для врачей
 	CreateVeterinarian(vet *models.Veterinarian) error
 	UpdateVeterinarian(vet *models.Veterinarian) error
+
+	// Новый метод для получения полной информации о враче
+	GetVeterinarianWithDetails(id int) (*models.Veterinarian, error)
 }

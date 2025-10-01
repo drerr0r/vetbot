@@ -565,11 +565,14 @@ func (d *Database) GetClinicsByCity(cityID int) ([]*models.Clinic, error) {
 }
 
 // FindVetsByCity ищет врачей по городу с дополнительными критериями
+// FindVetsByCity ищет врачей по городу с дополнительными критериями
 func (d *Database) FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Veterinarian, error) {
 	query := `
         SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email, 
-               v.description, v.experience_years, v.is_active, v.created_at
+               v.description, v.experience_years, v.is_active, v.city_id, v.created_at,
+               c.id, c.name, c.region, c.created_at
         FROM veterinarians v
+        LEFT JOIN cities c ON v.city_id = c.id
         WHERE v.is_active = true AND v.city_id = $1`
 
 	args := []interface{}{criteria.CityID}
@@ -602,10 +605,21 @@ func (d *Database) FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Ve
 	var veterinarians []*models.Veterinarian
 	for rows.Next() {
 		var vet models.Veterinarian
+		var cityID sql.NullInt64
+		var city models.City
+		var cityCreatedAt time.Time
+
 		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
+			&city.ID, &city.Name, &city.Region, &cityCreatedAt)
 		if err != nil {
 			return nil, err
+		}
+
+		vet.CityID = cityID
+		if cityID.Valid {
+			city.CreatedAt = cityCreatedAt
+			vet.City = &city
 		}
 
 		// Загружаем специализации для каждого врача
@@ -724,4 +738,51 @@ func (d *Database) UpdateCity(city *models.City) error {
 	query := "UPDATE cities SET name = $1, region = $2 WHERE id = $3"
 	_, err := d.db.Exec(query, city.Name, city.Region, city.ID)
 	return err
+}
+
+// GetVeterinarianWithDetails возвращает врача с полной информацией о городе и клиниках
+func (d *Database) GetVeterinarianWithDetails(id int) (*models.Veterinarian, error) {
+	// Получаем основную информацию о враче с городом
+	query := `
+        SELECT v.id, v.first_name, v.last_name, v.phone, v.email, 
+               v.description, v.experience_years, v.is_active, v.city_id, v.created_at,
+               c.id, c.name, c.region, c.created_at
+        FROM veterinarians v
+        LEFT JOIN cities c ON v.city_id = c.id
+        WHERE v.id = $1`
+
+	var vet models.Veterinarian
+	var cityID sql.NullInt64
+	var city models.City
+	var cityCreatedAt time.Time
+
+	err := d.db.QueryRow(query, id).Scan(
+		&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+		&vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
+		&city.ID, &city.Name, &city.Region, &cityCreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	vet.CityID = cityID
+	if cityID.Valid {
+		city.CreatedAt = cityCreatedAt
+		vet.City = &city
+	}
+
+	// Загружаем специализации
+	specs, err := d.GetSpecializationsByVetID(vet.ID)
+	if err == nil {
+		vet.Specializations = specs
+	}
+
+	// Загружаем расписание и клиники
+	schedules, err := d.GetSchedulesByVetID(vet.ID)
+	if err == nil {
+		// Можно добавить информацию о клиниках из расписания если нужно
+		vet.Schedules = schedules
+	}
+
+	return &vet, nil
 }
