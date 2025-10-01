@@ -53,10 +53,10 @@ func main() {
 		log.Println("Database columns check completed successfully")
 	}
 
-	// Создаем адаптер для бота
+	// ИСПРАВЛЕНО: Создаем адаптер для бота
 	botAdapter := handlers.NewTelegramBotAdapter(bot)
 
-	// Создаем основной обработчик
+	// ИСПРАВЛЕНО: Используем адаптер вместо прямого использования bot
 	mainHandler := handlers.NewMainHandler(botAdapter, db, config)
 
 	// Настраиваем long polling

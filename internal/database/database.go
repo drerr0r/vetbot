@@ -794,3 +794,28 @@ func (d *Database) GetVeterinarianWithDetails(id int) (*models.Veterinarian, err
 
 	return &vet, nil
 }
+
+// GetSpecializationByName возвращает специализацию по имени
+func (d *Database) GetSpecializationByName(name string) (*models.Specialization, error) {
+	query := `SELECT id, name, description, created_at FROM specializations WHERE LOWER(name) = LOWER($1)`
+	var spec models.Specialization
+	err := d.db.QueryRow(query, name).Scan(&spec.ID, &spec.Name, &spec.Description, &spec.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &spec, nil
+}
+
+// CreateSpecialization создает новую специализацию
+func (d *Database) CreateSpecialization(spec *models.Specialization) error {
+	query := `INSERT INTO specializations (name, description, created_at) 
+              VALUES ($1, $2, $3) RETURNING id`
+	return d.db.QueryRow(query, spec.Name, spec.Description, spec.CreatedAt).Scan(&spec.ID)
+}
+
+// AddVeterinarianSpecialization добавляет специализацию врачу
+func (d *Database) AddVeterinarianSpecialization(vetID int, specID int) error {
+	query := `INSERT INTO vet_specializations (vet_id, specialization_id) VALUES ($1, $2)`
+	_, err := d.db.Exec(query, vetID, specID)
+	return err
+}

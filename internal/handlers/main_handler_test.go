@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/stretchr/testify/assert"
@@ -17,17 +16,17 @@ import (
 
 func TestMainHandler_NewMainHandler(t *testing.T) {
 	// Arrange
-	var bot *tgbotapi.BotAPI = nil
-	var db *database.Database = nil
+	mockBot := NewMockBot() // Используем мок вместо реального бота
+	mockDB := NewMockDatabase()
 	config := &utils.Config{}
 
 	// Act
-	handler := NewMainHandler(bot, db, config)
+	handler := NewMainHandler(mockBot, mockDB, config)
 
 	// Assert
 	assert.NotNil(t, handler)
-	assert.Nil(t, handler.bot)
-	assert.Nil(t, handler.db)
+	assert.Equal(t, mockBot, handler.bot)
+	assert.Equal(t, mockDB, handler.db)
 	assert.Equal(t, config, handler.config)
 	assert.NotNil(t, handler.vetHandlers)
 	assert.NotNil(t, handler.adminHandlers)

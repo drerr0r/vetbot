@@ -6,11 +6,11 @@ import (
 
 // BotHandlers содержит базовые обработчики бота
 type BotHandlers struct {
-	bot *tgbotapi.BotAPI
+	bot BotAPI // Используем интерфейс вместо конкретной реализации
 }
 
 // NewBotHandlers создает новый экземпляр BotHandlers
-func NewBotHandlers(bot *tgbotapi.BotAPI) *BotHandlers {
+func NewBotHandlers(bot BotAPI) *BotHandlers {
 	return &BotHandlers{
 		bot: bot,
 	}
@@ -48,4 +48,9 @@ func (h *BotHandlers) SendWelcomeMessage(chatID int64) {
 
 Начните с команды /help чтобы увидеть все возможности!`)
 	h.bot.Send(msg)
+}
+
+// GetToken возвращает токен бота
+func (b *BotHandlers) GetToken() string {
+	return b.bot.GetToken()
 }

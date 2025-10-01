@@ -3,12 +3,14 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/xuri/excelize/v2"
 )
 
 // ============================================================================
@@ -753,4 +755,227 @@ func (m *MockDatabase) GetVeterinarianWithDetails(id int) (*models.Veterinarian,
 	}
 
 	return &vetWithDetails, nil
+}
+
+// ============================================================================
+// МЕТОДЫ ДЛЯ ИМПОРТА
+// ============================================================================
+
+// GetSpecializationByName возвращает специализацию по имени
+func (m *MockDatabase) GetSpecializationByName(name string) (*models.Specialization, error) {
+	if m.SpecializationsError != nil {
+		return nil, m.SpecializationsError
+	}
+
+	for _, spec := range m.Specializations {
+		if spec.Name == name {
+			return spec, nil
+		}
+	}
+	return nil, sql.ErrNoRows
+}
+
+// CreateSpecialization создает новую специализацию
+func (m *MockDatabase) CreateSpecialization(spec *models.Specialization) error {
+	if m.SpecializationsError != nil {
+		return m.SpecializationsError
+	}
+
+	// Генерируем ID если не установлен
+	if spec.ID == 0 {
+		spec.ID = len(m.Specializations) + 1
+	}
+
+	// Устанавливаем время создания если не установлено
+	if spec.CreatedAt.IsZero() {
+		spec.CreatedAt = time.Now()
+	}
+
+	m.Specializations[spec.ID] = spec
+	return nil
+}
+
+// AddVeterinarianSpecialization добавляет специализацию врачу
+func (m *MockDatabase) AddVeterinarianSpecialization(vetID int, specID int) error {
+	if m.VeterinariansError != nil {
+		return m.VeterinariansError
+	}
+
+	vet, exists := m.Veterinarians[vetID]
+	if !exists {
+		return sql.ErrNoRows
+	}
+
+	spec, exists := m.Specializations[specID]
+	if !exists {
+		return sql.ErrNoRows
+	}
+
+	// Добавляем специализацию если ее еще нет
+	for _, existingSpec := range vet.Specializations {
+		if existingSpec.ID == specID {
+			return nil // Уже существует
+		}
+	}
+
+	vet.Specializations = append(vet.Specializations, spec)
+	return nil
+}
+
+// ============================================================================
+// ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ТЕСТИРОВАНИЯ ИМПОРТА
+// ============================================================================
+
+// CreateTestImportData создает тестовые данные для импорта
+func CreateTestImportData() (*MockDatabase, *MockBot) {
+	mockDB := NewMockDatabase()
+	mockBot := NewMockBot()
+
+	// Добавляем тестовые города
+	mockDB.AddTestCity(1, "Москва", "Центральный")
+	mockDB.AddTestCity(2, "Санкт-Петербург", "Северо-Западный")
+	mockDB.AddTestCity(3, "Новосибирск", "Сибирский")
+
+	// Добавляем тестовые специализации
+	mockDB.AddTestSpecialization(1, "Хирургия")
+	mockDB.AddTestSpecialization(2, "Терапия")
+	mockDB.AddTestSpecialization(3, "Стоматология")
+	mockDB.AddTestSpecialization(4, "Дерматология")
+
+	return mockDB, mockBot
+}
+
+// CreateTestCSVFile создает тестовый CSV файл для импорта
+func CreateTestCSVFile() string {
+	content := `Имя	Фамилия	Телефон	Email	Опыт работы	Описание	Специализации	Город	Регион
+Иван	Иванов	+79991234567	ivan@vet.ru	5 лет	Опытный врач	Хирургия, терапия	Москва	Центральный
+Петр	Петров	+79997654321	petr@vet.ru	3 года	Молодой специалист	Стоматология	Санкт-Петербург	Северо-Западный
+Анна	Сидорова	+79995554433	anna@vet.ru	7 лет	Ветеринарный врач	Дерматология	Новосибирск	Сибирский`
+
+	// Создаем временный файл
+	tmpFile, err := os.CreateTemp("", "test_import_*.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer tmpFile.Close()
+
+	_, err = tmpFile.WriteString(content)
+	if err != nil {
+		panic(err)
+	}
+
+	return tmpFile.Name()
+}
+
+// CreateTestXLSXFile создает тестовый XLSX файл для импорта
+func CreateTestXLSXFile() string {
+	f := excelize.NewFile()
+
+	// Создаем заголовки
+	headers := []string{"Имя", "Фамилия", "Телефон", "Email", "Опыт работы", "Описание", "Специализации", "Город", "Регион"}
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue("Sheet1", cell, header)
+	}
+
+	// Добавляем тестовые данные
+	data := [][]interface{}{
+		{"Иван", "Иванов", "+79991234567", "ivan@vet.ru", "5 лет", "Опытный врач", "Хирургия, терапия", "Москва", "Центральный"},
+		{"Петр", "Петров", "+79997654321", "petr@vet.ru", "3 года", "Молодой специалист", "Стоматология", "Санкт-Петербург", "Северо-Западный"},
+		{"Анна", "Сидорова", "+79995554433", "anna@vet.ru", "7 лет", "Ветеринарный врач", "Дерматология", "Новосибирск", "Сибирский"},
+	}
+
+	for row, rowData := range data {
+		for col, value := range rowData {
+			cell, _ := excelize.CoordinatesToCellName(col+1, row+2)
+			f.SetCellValue("Sheet1", cell, value)
+		}
+	}
+
+	// Сохраняем во временный файл
+	tmpFile, err := os.CreateTemp("", "test_import_*.xlsx")
+	if err != nil {
+		panic(err)
+	}
+	defer tmpFile.Close()
+
+	if err := f.SaveAs(tmpFile.Name()); err != nil {
+		panic(err)
+	}
+
+	return tmpFile.Name()
+}
+
+// CleanupTestFiles удаляет временные тестовые файлы
+func CleanupTestFiles(filePaths ...string) {
+	for _, filePath := range filePaths {
+		os.Remove(filePath)
+	}
+}
+
+// VerifyVeterinarianImported проверяет, что ветеринар был корректно импортирован
+func VerifyVeterinarianImported(db *MockDatabase, firstName, lastName, phone string) bool {
+	for _, vet := range db.Veterinarians {
+		if vet.FirstName == firstName && vet.LastName == lastName && vet.Phone == phone {
+			return true
+		}
+	}
+	return false
+}
+
+// VerifySpecializationAdded проверяет, что специализация была добавлена врачу
+func VerifySpecializationAdded(db *MockDatabase, vetFirstName, vetLastName, specName string) bool {
+	for _, vet := range db.Veterinarians {
+		if vet.FirstName == vetFirstName && vet.LastName == vetLastName {
+			for _, spec := range vet.Specializations {
+				if spec.Name == specName {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// VerifyCityCreated проверяет, что город был создан
+func VerifyCityCreated(db *MockDatabase, cityName string) bool {
+	for _, city := range db.Cities {
+		if city.Name == cityName {
+			return true
+		}
+	}
+	return false
+}
+
+// MockBotAPI реализует интерфейс BotAPI для тестов
+type MockBotAPI struct {
+	Token string
+}
+
+func (m *MockBotAPI) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	return tgbotapi.Message{}, nil
+}
+
+func (m *MockBotAPI) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
+	return &tgbotapi.APIResponse{}, nil
+}
+
+func (m *MockBotAPI) GetFile(config tgbotapi.FileConfig) (tgbotapi.File, error) {
+	return tgbotapi.File{}, nil
+}
+
+// CreateRealTestMainHandlers создает MainHandler с реальными зависимостями для тестов
+func CreateRealTestMainHandlers() (*MainHandler, *MockBot) {
+	mockBot := NewMockBot()
+	mockDB := NewMockDatabase()
+	config := CreateTestConfig()
+
+	// Создаем реальный MainHandler
+	mainHandler := NewMainHandler(mockBot, mockDB, config)
+	return mainHandler, mockBot
+}
+
+// GetToken возвращает тестовый токен для MockBot
+func (m *MockBot) GetToken() string {
+	return "test_bot_token"
 }

@@ -14,14 +14,14 @@ import (
 
 func TestBotHandlers_NewBotHandlers(t *testing.T) {
 	// Arrange
-	var bot *tgbotapi.BotAPI = nil
+	mockBot := NewMockBot() // ИСПРАВЛЕНО: используем мок вместо реального бота
 
 	// Act
-	handler := NewBotHandlers(bot)
+	handler := NewBotHandlers(mockBot)
 
 	// Assert
 	assert.NotNil(t, handler)
-	assert.Nil(t, handler.bot)
+	assert.Equal(t, mockBot, handler.bot) // ИСПРАВЛЕНО: проверяем что мок установлен
 }
 
 // ============================================================================
@@ -106,30 +106,27 @@ func TestBotHandlers_MessageContentLogic(t *testing.T) {
 
 func TestBotHandlers_Structure(t *testing.T) {
 	t.Run("BotHandlers has required fields", func(t *testing.T) {
-		var bot *tgbotapi.BotAPI = nil
-		handler := NewBotHandlers(bot)
+		mockBot := NewMockBot() // ИСПРАВЛЕНО: используем мок
+		handler := NewBotHandlers(mockBot)
 
 		// Проверяем что структура имеет ожидаемые поля
 		assert.NotNil(t, handler)
-		assert.Nil(t, handler.bot) // В тестовом режиме
+		assert.Equal(t, mockBot, handler.bot) // ИСПРАВЛЕНО: проверяем что мок установлен
 	})
 
 	t.Run("Multiple handler instances are independent", func(t *testing.T) {
-		var bot1 *tgbotapi.BotAPI = nil
-		var bot2 *tgbotapi.BotAPI = nil
+		mockBot1 := NewMockBot() // ИСПРАВЛЕНО: используем моки
+		mockBot2 := NewMockBot()
 
-		handler1 := NewBotHandlers(bot1)
-		handler2 := NewBotHandlers(bot2)
+		handler1 := NewBotHandlers(mockBot1)
+		handler2 := NewBotHandlers(mockBot2)
 
-		// Проверяем что это разные экземпляры (разные адреса в памяти)
-		// Используем NotSame вместо NotEqual для проверки разных экземпляров
-		if handler1 == handler2 {
-			t.Error("Handler instances should be different")
-		}
+		// Проверяем что это разные экземпляры
+		assert.NotEqual(t, handler1, handler2, "Handler instances should be different")
 
-		// Проверяем что оба имеют nil бота (в тестовом режиме)
-		assert.Nil(t, handler1.bot)
-		assert.Nil(t, handler2.bot)
+		// Проверяем что оба имеют своих ботов
+		assert.Equal(t, mockBot1, handler1.bot)
+		assert.Equal(t, mockBot2, handler2.bot)
 	})
 }
 
@@ -293,37 +290,34 @@ func TestBotHandlers_EdgeCases(t *testing.T) {
 
 	t.Run("Zero chat ID for error message", func(t *testing.T) {
 		// Arrange
-		var bot *tgbotapi.BotAPI = nil
-		handler := NewBotHandlers(bot)
+		mockBot := NewMockBot() // ИСПРАВЛЕНО: используем мок
+		handler := NewBotHandlers(mockBot)
 
 		// Act & Assert - не должно паниковать
 		assert.NotPanics(t, func() {
-			// В реальном коде это вызовет метод, но в тестах мы просто проверяем что нет паники
 			_ = handler
 		})
 	})
 
 	t.Run("Negative chat ID for welcome message", func(t *testing.T) {
 		// Arrange
-		var bot *tgbotapi.BotAPI = nil
-		handler := NewBotHandlers(bot)
+		mockBot := NewMockBot() // ИСПРАВЛЕНО: используем мок
+		handler := NewBotHandlers(mockBot)
 
 		// Act & Assert - не должно паниковать
 		assert.NotPanics(t, func() {
-			// В реальном коде это вызовет метод, но в тестах мы просто проверяем что нет паники
 			_ = handler
 		})
 	})
 
 	t.Run("Empty update for unknown command", func(t *testing.T) {
 		// Arrange
-		var bot *tgbotapi.BotAPI = nil
-		handler := NewBotHandlers(bot)
+		mockBot := NewMockBot() // ИСПРАВЛЕНО: используем мок
+		handler := NewBotHandlers(mockBot)
 		emptyUpdate := tgbotapi.Update{}
 
 		// Act & Assert - не должно паниковать
 		assert.NotPanics(t, func() {
-			// В реальном коде это вызовет метод, но в тестах мы просто проверяем что нет паники
 			_ = handler
 			_ = emptyUpdate
 		})
@@ -431,6 +425,65 @@ func TestBotHandlers_MessageCompleteness(t *testing.T) {
 		assert.Contains(t, message, "•", "Должен быть список возможностей")
 		assert.Contains(t, message, "/help", "Должна быть указана команда помощи")
 		assert.True(t, strings.Count(message, "•") >= 4, "Должно быть несколько пунктов возможностей")
+	})
+}
+
+// ============================================================================
+// ТЕСТЫ ДЛЯ РЕАЛЬНОЙ ФУНКЦИОНАЛЬНОСТИ
+// ============================================================================
+
+func TestBotHandlers_RealFunctionality(t *testing.T) {
+	t.Run("HandleUnknownCommand sends message", func(t *testing.T) {
+		// Arrange
+		mockBot := NewMockBot()
+		handler := NewBotHandlers(mockBot)
+
+		update := tgbotapi.Update{
+			Message: &tgbotapi.Message{
+				Text: "/unknown",
+				Chat: &tgbotapi.Chat{ID: 12345},
+			},
+		}
+
+		// Act
+		handler.HandleUnknownCommand(update)
+
+		// Assert
+		assert.Len(t, mockBot.SentMessages, 1)
+		message := mockBot.GetLastMessage()
+		assert.Contains(t, message.Text, "Неизвестная команда")
+		assert.Equal(t, int64(12345), message.ChatID)
+	})
+
+	t.Run("HandleErrorMessage sends error message", func(t *testing.T) {
+		// Arrange
+		mockBot := NewMockBot()
+		handler := NewBotHandlers(mockBot)
+
+		// Act
+		handler.HandleErrorMessage(12345, "test error")
+
+		// Assert
+		assert.Len(t, mockBot.SentMessages, 1)
+		message := mockBot.GetLastMessage()
+		assert.Contains(t, message.Text, "Произошла ошибка")
+		assert.Equal(t, int64(12345), message.ChatID)
+	})
+
+	t.Run("SendWelcomeMessage sends welcome", func(t *testing.T) {
+		// Arrange
+		mockBot := NewMockBot()
+		handler := NewBotHandlers(mockBot)
+
+		// Act
+		handler.SendWelcomeMessage(12345)
+
+		// Assert
+		assert.Len(t, mockBot.SentMessages, 1)
+		message := mockBot.GetLastMessage()
+		assert.Contains(t, message.Text, "Добро пожаловать")
+		assert.Contains(t, message.Text, "VetBot")
+		assert.Equal(t, int64(12345), message.ChatID)
 	})
 }
 

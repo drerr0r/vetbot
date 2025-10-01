@@ -1,10 +1,11 @@
+// internal/handlers/bot_adapter.go
 package handlers
 
 import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// TelegramBotAdapter адаптер для реального tgbotapi.BotAPI
+// TelegramBotAdapter адаптирует tgbotapi.BotAPI к нашему интерфейсу BotAPI
 type TelegramBotAdapter struct {
 	bot *tgbotapi.BotAPI
 }
@@ -27,4 +28,9 @@ func (a *TelegramBotAdapter) GetFile(config tgbotapi.FileConfig) (tgbotapi.File,
 // Request выполняет запрос к API
 func (a *TelegramBotAdapter) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
 	return a.bot.Request(c)
+}
+
+// GetToken возвращает токен бота
+func (a *TelegramBotAdapter) GetToken() string {
+	return a.bot.Token
 }

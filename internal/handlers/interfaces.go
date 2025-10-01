@@ -12,6 +12,7 @@ type BotAPI interface {
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
 	GetFile(config tgbotapi.FileConfig) (tgbotapi.File, error)
 	Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
+	GetToken() string
 }
 
 // Database интерфейс для работы с базой данных
@@ -58,4 +59,8 @@ type Database interface {
 
 	// Новый метод для получения полной информации о враче
 	GetVeterinarianWithDetails(id int) (*models.Veterinarian, error)
+
+	GetSpecializationByName(name string) (*models.Specialization, error)
+	CreateSpecialization(spec *models.Specialization) error
+	AddVeterinarianSpecialization(vetID int, specID int) error
 }
