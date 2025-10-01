@@ -561,42 +561,25 @@ func (d *Database) FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Ve
         SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email, 
                v.description, v.experience_years, v.is_active, v.created_at
         FROM veterinarians v
-        INNER JOIN vet_specializations vs ON v.id = vs.vet_id
-        INNER JOIN schedules s ON v.id = s.vet_id
-        INNER JOIN clinics c ON s.clinic_id = c.id
-        WHERE v.is_active = true AND s.is_available = true`
+        WHERE v.is_active = true AND v.city_id = $1`
 
-	args := []interface{}{}
-	argCount := 0
+	args := []interface{}{criteria.CityID}
 
-	if criteria.CityID > 0 {
-		argCount++
-		query += fmt.Sprintf(" AND c.city_id = $%d", argCount)
-		args = append(args, criteria.CityID)
-	}
-
+	// Дополнительные критерии поиска
 	if criteria.SpecializationID > 0 {
-		argCount++
-		query += fmt.Sprintf(" AND vs.specialization_id = $%d", argCount)
+		query += ` AND EXISTS (
+            SELECT 1 FROM vet_specializations vs 
+            WHERE vs.vet_id = v.id AND vs.specialization_id = $2
+        )`
 		args = append(args, criteria.SpecializationID)
 	}
 
 	if criteria.DayOfWeek > 0 {
-		argCount++
-		query += fmt.Sprintf(" AND s.day_of_week = $%d", argCount)
+		query += ` AND EXISTS (
+            SELECT 1 FROM schedules s 
+            WHERE s.vet_id = v.id AND s.day_of_week = $3 AND s.is_available = true
+        )`
 		args = append(args, criteria.DayOfWeek)
-	}
-
-	if criteria.District != "" {
-		argCount++
-		query += fmt.Sprintf(" AND LOWER(c.district) = LOWER($%d)", argCount)
-		args = append(args, criteria.District)
-	}
-
-	if criteria.MetroStation != "" {
-		argCount++
-		query += fmt.Sprintf(" AND LOWER(c.metro_station) = LOWER($%d)", argCount)
-		args = append(args, criteria.MetroStation)
 	}
 
 	query += " ORDER BY v.first_name, v.last_name"
