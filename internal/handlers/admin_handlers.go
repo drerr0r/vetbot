@@ -570,18 +570,26 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 	h.adminState[userID] = "vet_list"
 
+	InfoLog.Printf("🔄 Запрос списка врачей от пользователя %d", userID)
+
 	vets, err := h.db.GetAllVeterinarians()
 	if err != nil {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка врачей")
+		ErrorLog.Printf("❌ Ошибка при получении списка врачей: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка при получении списка врачей")
 		h.bot.Send(msg)
 		return
 	}
 
+	InfoLog.Printf("✅ Получено %d врачей из базы данных", len(vets))
+
 	if len(vets) == 0 {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Врачи не найдены")
+		InfoLog.Printf("📭 В базе данных нет врачей")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "📭 Врачи не найдены")
 		h.bot.Send(msg)
 		return
 	}
+
+	InfoLog.Printf("📋 Формируем список из %d врачей для отображения", len(vets))
 
 	var sb strings.Builder
 	sb.WriteString("👥 *Список врачей:*\n\n")
@@ -607,6 +615,7 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 	msg.ReplyMarkup = keyboard
 
 	h.bot.Send(msg)
+	InfoLog.Printf("✅ Список врачей успешно отправлен пользователю %d", userID)
 }
 
 // handleVetListSelection обрабатывает выбор врача из списка
