@@ -445,6 +445,7 @@ type MockBot struct {
 	SentMessages   []tgbotapi.MessageConfig
 	Callbacks      []tgbotapi.CallbackConfig
 	EditedMessages []tgbotapi.EditMessageTextConfig
+	Files          map[string]tgbotapi.File // Для хранения файлов
 }
 
 // NewMockBot создает новый мок бота
@@ -453,6 +454,7 @@ func NewMockBot() *MockBot {
 		SentMessages:   make([]tgbotapi.MessageConfig, 0),
 		Callbacks:      make([]tgbotapi.CallbackConfig, 0),
 		EditedMessages: make([]tgbotapi.EditMessageTextConfig, 0),
+		Files:          make(map[string]tgbotapi.File),
 	}
 }
 
@@ -473,9 +475,26 @@ func (m *MockBot) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
 	}
 }
 
+// GetFile имитирует получение файла
+func (m *MockBot) GetFile(config tgbotapi.FileConfig) (tgbotapi.File, error) {
+	file, exists := m.Files[config.FileID]
+	if !exists {
+		return tgbotapi.File{}, fmt.Errorf("file not found: %s", config.FileID)
+	}
+	return file, nil
+}
+
 // Request имитирует запрос к API
 func (m *MockBot) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
 	return &tgbotapi.APIResponse{Ok: true}, nil
+}
+
+// AddTestFile добавляет тестовый файл для мока
+func (m *MockBot) AddTestFile(fileID string, filePath string) {
+	m.Files[fileID] = tgbotapi.File{
+		FileID:   fileID,
+		FilePath: filePath,
+	}
 }
 
 // GetSentMessages возвращает отправленные сообщения
@@ -504,6 +523,7 @@ func (m *MockBot) Clear() {
 	m.SentMessages = make([]tgbotapi.MessageConfig, 0)
 	m.Callbacks = make([]tgbotapi.CallbackConfig, 0)
 	m.EditedMessages = make([]tgbotapi.EditMessageTextConfig, 0)
+	m.Files = make(map[string]tgbotapi.File)
 }
 
 // ============================================================================

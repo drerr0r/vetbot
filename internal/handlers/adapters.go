@@ -19,6 +19,11 @@ func (a *TelegramBotAdapter) Send(c tgbotapi.Chattable) (tgbotapi.Message, error
 	return a.bot.Send(c)
 }
 
+// GetFile получает файл
+func (a *TelegramBotAdapter) GetFile(config tgbotapi.FileConfig) (tgbotapi.File, error) {
+	return a.bot.GetFile(config)
+}
+
 // Request выполняет запрос к API
 func (a *TelegramBotAdapter) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
 	return a.bot.Request(c)

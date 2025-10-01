@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -2591,4 +2592,118 @@ func (h *AdminHandlers) GenerateImportTemplate(w http.ResponseWriter, r *http.Re
 
 	// Удаляем временный файл
 	defer os.Remove(filepath)
+}
+
+func (h *AdminHandlers) HandleAdminDocument(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+
+	// Проверяем, что пользователь в состоянии импорта
+	state := h.adminState[userID]
+	if state != "import_menu" && !strings.Contains(state, "import") {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"Сначала выберите тип импорта в меню админки")
+		h.bot.Send(msg)
+		return
+	}
+
+	fileID := update.Message.Document.FileID
+	fileName := update.Message.Document.FileName
+
+	InfoLog.Printf("📥 Файл '%s' получен для импорта (state: %s)", fileName, state)
+
+	// Скачиваем файл
+	fileConfig := tgbotapi.FileConfig{FileID: fileID}
+	file, err := h.bot.GetFile(fileConfig)
+	if err != nil {
+		ErrorLog.Printf("❌ Ошибка получения файла: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка загрузки файла")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Получаем прямую ссылку на файл
+	fileURL := file.Link(h.config.TelegramToken)
+	resp, err := http.Get(fileURL)
+	if err != nil {
+		ErrorLog.Printf("❌ Ошибка скачивания файла: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка скачивания файла")
+		h.bot.Send(msg)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Определяем тип импорта по состоянию и имени файла
+	if strings.Contains(strings.ToLower(fileName), "врач") || state == "import_veterinarians" {
+		h.importVeterinarians(update, resp.Body, fileName)
+	} else if strings.Contains(strings.ToLower(fileName), "город") || state == "import_cities" {
+		h.importCities(update, resp.Body, fileName)
+	} else if strings.Contains(strings.ToLower(fileName), "клиник") || state == "import_clinics" {
+		h.importClinics(update, resp.Body, fileName)
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"Не могу определить тип данных для импорта. Уточните в названии файла (врач/город/клиника)")
+		h.bot.Send(msg)
+	}
+}
+
+// Метод для импорта врачей
+func (h *AdminHandlers) importVeterinarians(update tgbotapi.Update, file io.Reader, fileName string) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "🔄 Начинаю импорт врачей...")
+	h.bot.Send(msg)
+
+	// Создаем импортер
+	importer := imports.NewCSVImporter(h.db.(*database.Database))
+
+	// Выполняем импорт
+	result, err := importer.ImportVeterinarians(file, fileName, InfoLog, ErrorLog)
+	if err != nil {
+		ErrorLog.Printf("❌ Ошибка импорта врачей: %v", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка импорта: %v", err))
+		h.bot.Send(msg)
+		return
+	}
+
+	// Формируем отчет
+	report := fmt.Sprintf("📊 *Результат импорта врачей:*\n\n"+
+		"📁 Файл: %s\n"+
+		"📊 Всего строк: %d\n"+
+		"✅ Успешно: %d\n"+
+		"❌ Ошибок: %d\n\n",
+		fileName, result.TotalRows, result.SuccessCount, result.ErrorCount)
+
+	if result.ErrorCount > 0 {
+		report += "*Ошибки:*\n"
+		for _, importError := range result.Errors {
+			report += fmt.Sprintf("Строка %d: %s\n", importError.RowNumber, importError.Message)
+		}
+	}
+
+	msg = tgbotapi.NewMessage(update.Message.Chat.ID, report)
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+
+	// Возвращаем в меню админки
+	h.adminState[update.Message.From.ID] = "main_menu"
+	h.HandleAdmin(update)
+}
+
+// Временные заглушки для других типов импорта
+func (h *AdminHandlers) importCities(update tgbotapi.Update, _ io.Reader, _ string) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Импорт городов в разработке")
+	h.bot.Send(msg)
+}
+
+func (h *AdminHandlers) importClinics(update tgbotapi.Update, _ io.Reader, _ string) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Импорт клиник в разработке")
+	h.bot.Send(msg)
+}
+
+func (h *AdminHandlers) IsAdmin(userID int64) bool {
+	_, exists := h.adminState[userID]
+	return exists
+}
+
+func (h *AdminHandlers) GetAdminState(userID int64) string {
+	return h.adminState[userID]
 }

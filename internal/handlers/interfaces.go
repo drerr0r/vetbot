@@ -10,6 +10,7 @@ import (
 // BotAPI интерфейс для Telegram бота
 type BotAPI interface {
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
+	GetFile(config tgbotapi.FileConfig) (tgbotapi.File, error)
 	Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
 }
 
