@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -295,35 +294,45 @@ func (h *MainHandler) downloadFile(fileID string, fileName string) (string, erro
 	return filePath, nil
 }
 
-// Импорт врачей (обновленная версия)
+// Импорт врачей (обновленная версия с улучшенным логированием)
 func (h *MainHandler) importVeterinarians(filePath string, fileName string) (string, error) {
+	InfoLog.Printf("Начинаем импорт врачей из файла: %s", fileName)
+
 	var vets []models.Veterinarian
 	var err error
 
 	// Определяем тип файла и парсим
 	if strings.HasSuffix(strings.ToLower(fileName), ".csv") {
+		InfoLog.Printf("Обрабатываем CSV файл: %s", filePath)
 		vets, err = h.parseVeterinariansCSV(filePath)
 	} else if strings.HasSuffix(strings.ToLower(fileName), ".xlsx") {
+		InfoLog.Printf("Обрабатываем Excel файл: %s", filePath)
 		vets, err = h.parseVeterinariansXLSX(filePath)
 	} else {
 		return "", fmt.Errorf("неподдерживаемый формат файла. Используйте CSV или XLSX")
 	}
 
 	if err != nil {
+		ErrorLog.Printf("Ошибка парсинга файла %s: %v", fileName, err)
 		return "", err
 	}
 
 	if len(vets) == 0 {
-		return "⚠️ В файле не найдено данных для импорта", nil
+		InfoLog.Printf("В файле %s не найдено данных для импорта", fileName)
+		return "⚠️ В файле не найдено данных для импорта. Проверьте формат файла и наличие данных.", nil
 	}
+
+	InfoLog.Printf("Найдено %d ветеринаров для импорта", len(vets))
 
 	// Сохраняем в базу
 	successCount := 0
-	for _, vet := range vets {
+	for i, vet := range vets {
+		InfoLog.Printf("Импортируем ветеринара %d/%d: %s %s", i+1, len(vets), vet.FirstName, vet.LastName)
+
 		// Сохраняем основную информацию о враче
 		err := h.db.CreateVeterinarian(&vet)
 		if err != nil {
-			log.Printf("Ошибка сохранения врача %s %s: %v", vet.FirstName, vet.LastName, err)
+			ErrorLog.Printf("Ошибка сохранения врача %s %s: %v", vet.FirstName, vet.LastName, err)
 			continue
 		}
 
@@ -331,18 +340,22 @@ func (h *MainHandler) importVeterinarians(filePath string, fileName string) (str
 		for _, spec := range vet.Specializations {
 			err := h.db.AddVeterinarianSpecialization(vet.ID, spec.ID)
 			if err != nil {
-				log.Printf("Ошибка добавления специализации для врача %d: %v", vet.ID, err)
+				ErrorLog.Printf("Ошибка добавления специализации для врача %d: %v", vet.ID, err)
 			}
 		}
 
 		successCount++
+		InfoLog.Printf("Успешно импортирован ветеринар: %s %s (ID: %d)", vet.FirstName, vet.LastName, vet.ID)
 	}
 
-	return fmt.Sprintf("✅ Импорт завершен!\n\nОбработано записей: %d\nУспешно импортировано: %d\nОшибок: %d",
-		len(vets), successCount, len(vets)-successCount), nil
+	result := fmt.Sprintf("✅ Импорт завершен!\n\nОбработано записей: %d\nУспешно импортировано: %d\nОшибок: %d",
+		len(vets), successCount, len(vets)-successCount)
+
+	InfoLog.Printf("Результат импорта: %s", result)
+	return result, nil
 }
 
-// Парсинг CSV файла с врачами (адаптировано под ваши модели)
+// Парсинг CSV файла с врачами (исправленная версия)
 func (h *MainHandler) parseVeterinariansCSV(filePath string) ([]models.Veterinarian, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -350,72 +363,135 @@ func (h *MainHandler) parseVeterinariansCSV(filePath string) ([]models.Veterinar
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	reader.Comma = '\t' // Табуляция как разделитель
-	reader.FieldsPerRecord = -1
-	reader.LazyQuotes = true
+	// Пробуем разные разделители
+	separators := []rune{'\t', ';', ',', '|'}
+	var records [][]string
+	var parseError error
 
-	records, err := reader.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("ошибка чтения CSV: %v", err)
+	for _, separator := range separators {
+		file.Seek(0, 0) // Сбрасываем позицию чтения
+		reader := csv.NewReader(file)
+		reader.Comma = separator
+		reader.FieldsPerRecord = -1 // Разрешаем разное количество полей
+		reader.LazyQuotes = true
+		reader.TrimLeadingSpace = true
+
+		records, parseError = reader.ReadAll()
+		if parseError == nil && len(records) > 1 {
+			InfoLog.Printf("Успешно распарсен CSV с разделителем: %q", string(separator))
+			break
+		}
+	}
+
+	if parseError != nil {
+		return nil, fmt.Errorf("ошибка чтения CSV: %v", parseError)
 	}
 
 	if len(records) < 2 {
-		return nil, fmt.Errorf("файл не содержит данных")
+		return nil, fmt.Errorf("файл не содержит данных или заголовков")
 	}
+
+	// Определяем индексы колонок по заголовкам
+	headers := records[0]
+	columnIndexes := make(map[string]int)
+	for i, header := range headers {
+		cleanHeader := strings.ToLower(strings.TrimSpace(header))
+		columnIndexes[cleanHeader] = i
+	}
+
+	InfoLog.Printf("Заголовки CSV: %v", headers)
+	InfoLog.Printf("Найдено строк: %d", len(records)-1)
 
 	var vets []models.Veterinarian
 
 	for i, record := range records[1:] {
-		if len(record) < 9 {
-			log.Printf("Пропускаем строку %d: недостаточно данных (нужно 9 колонок, получили %d)", i+2, len(record))
+		// Пропускаем пустые строки
+		if len(record) == 0 || (len(record) == 1 && strings.TrimSpace(record[0]) == "") {
+			InfoLog.Printf("Пропускаем пустую строку %d", i+2)
 			continue
 		}
 
-		// Парсим опыт работы (может быть в формате "5 лет")
+		// Получаем данные по названиям колонок
+		firstName := h.getColumnValue(record, columnIndexes, []string{"имя", "firstname", "name"})
+		lastName := h.getColumnValue(record, columnIndexes, []string{"фамилия", "lastname", "surname"})
+		phone := h.getColumnValue(record, columnIndexes, []string{"телефон", "phone", "тел"})
+		email := h.getColumnValue(record, columnIndexes, []string{"email", "почта"})
+		experience := h.getColumnValue(record, columnIndexes, []string{"опыт", "experience", "опыт работы"})
+		description := h.getColumnValue(record, columnIndexes, []string{"описание", "description"})
+		specializations := h.getColumnValue(record, columnIndexes, []string{"специализации", "specializations", "специализация"})
+		city := h.getColumnValue(record, columnIndexes, []string{"город", "city"})
+		region := h.getColumnValue(record, columnIndexes, []string{"регион", "region"})
+
+		// Проверяем обязательные поля
+		if firstName == "" || lastName == "" || phone == "" {
+			InfoLog.Printf("Пропускаем строку %d: отсутствуют обязательные поля (Имя: %s, Фамилия: %s, Телефон: %s)",
+				i+2, firstName, lastName, phone)
+			continue
+		}
+
+		// Парсим опыт работы
 		var experienceYears sql.NullInt64
-		if expStr := strings.TrimSpace(record[4]); expStr != "" {
+		if expStr := strings.TrimSpace(experience); expStr != "" {
 			if years, err := extractYearsFromExperience(expStr); err == nil {
 				experienceYears = sql.NullInt64{Int64: int64(years), Valid: true}
+				InfoLog.Printf("Опыт работы для %s %s: %d лет", firstName, lastName, years)
+			} else {
+				InfoLog.Printf("Не удалось распарсить опыт работы '%s' для %s %s: %v", expStr, firstName, lastName, err)
 			}
 		}
 
 		vet := models.Veterinarian{
-			FirstName:       strings.TrimSpace(record[0]),
-			LastName:        strings.TrimSpace(record[1]),
-			Phone:           strings.TrimSpace(record[2]),
-			Email:           sql.NullString{String: strings.TrimSpace(record[3]), Valid: record[3] != ""},
+			FirstName:       strings.TrimSpace(firstName),
+			LastName:        strings.TrimSpace(lastName),
+			Phone:           strings.TrimSpace(phone),
+			Email:           sql.NullString{String: strings.TrimSpace(email), Valid: email != ""},
 			ExperienceYears: experienceYears,
-			Description:     sql.NullString{String: strings.TrimSpace(record[5]), Valid: record[5] != ""},
+			Description:     sql.NullString{String: strings.TrimSpace(description), Valid: description != ""},
 			IsActive:        true,
 			CreatedAt:       time.Now(),
 		}
 
 		// Получаем CityID по имени города
-		cityID, err := h.getOrCreateCityID(strings.TrimSpace(record[7]), strings.TrimSpace(record[8]))
-		if err != nil {
-			log.Printf("Ошибка получения CityID для города %s: %v", record[7], err)
-			continue
+		if city != "" {
+			cityID, err := h.getOrCreateCityID(strings.TrimSpace(city), strings.TrimSpace(region))
+			if err != nil {
+				InfoLog.Printf("Ошибка получения CityID для города %s: %v", city, err)
+			} else {
+				vet.CityID = sql.NullInt64{Int64: int64(cityID), Valid: true}
+				InfoLog.Printf("Город для %s %s: %s (ID: %d)", firstName, lastName, city, cityID)
+			}
 		}
-		vet.CityID = sql.NullInt64{Int64: int64(cityID), Valid: true}
 
 		// Обрабатываем специализации
-		if specStr := strings.TrimSpace(record[6]); specStr != "" {
-			specializations, err := h.processSpecializations(specStr)
+		if specStr := strings.TrimSpace(specializations); specStr != "" {
+			specializationsList, err := h.processSpecializations(specStr)
 			if err != nil {
-				log.Printf("Ошибка обработки специализаций для %s: %v", vet.FirstName, err)
+				InfoLog.Printf("Ошибка обработки специализаций для %s %s: %v", firstName, lastName, err)
 			} else {
-				vet.Specializations = specializations
+				vet.Specializations = specializationsList
+				InfoLog.Printf("Специализации для %s %s: %v", firstName, lastName, specStr)
 			}
 		}
 
 		vets = append(vets, vet)
+		InfoLog.Printf("Добавлен ветеринар: %s %s, телефон: %s", firstName, lastName, phone)
 	}
 
+	InfoLog.Printf("Успешно обработано ветеринаров: %d из %d", len(vets), len(records)-1)
 	return vets, nil
 }
 
-// Парсинг XLSX файла с врачами (адаптировано под ваши модели)
+// Вспомогательная функция для получения значения колонки
+func (h *MainHandler) getColumnValue(record []string, columnIndexes map[string]int, possibleNames []string) string {
+	for _, name := range possibleNames {
+		if idx, exists := columnIndexes[name]; exists && idx < len(record) {
+			return record[idx]
+		}
+	}
+	return ""
+}
+
+// Парсинг XLSX файла с врачами (исправленная версия)
 func (h *MainHandler) parseVeterinariansXLSX(filePath string) ([]models.Veterinarian, error) {
 	f, err := excelize.OpenFile(filePath)
 	if err != nil {
@@ -437,54 +513,88 @@ func (h *MainHandler) parseVeterinariansXLSX(filePath string) ([]models.Veterina
 		return nil, fmt.Errorf("файл не содержит данных")
 	}
 
+	InfoLog.Printf("Заголовки Excel: %v", rows[0])
+	InfoLog.Printf("Найдено строк: %d", len(rows)-1)
+
+	// Определяем индексы колонок по заголовкам
+	headers := rows[0]
+	columnIndexes := make(map[string]int)
+	for i, header := range headers {
+		cleanHeader := strings.ToLower(strings.TrimSpace(header))
+		columnIndexes[cleanHeader] = i
+	}
+
 	var vets []models.Veterinarian
 
 	for i, row := range rows[1:] {
-		if len(row) < 9 {
-			log.Printf("Пропускаем строку %d: недостаточно данных (нужно 9 колонок, получили %d)", i+2, len(row))
+		// Пропускаем пустые строки
+		if len(row) == 0 {
+			InfoLog.Printf("Пропускаем пустую строку %d", i+2)
+			continue
+		}
+
+		// Получаем данные по названиям колонок
+		firstName := h.getColumnValue(row, columnIndexes, []string{"имя", "firstname", "name"})
+		lastName := h.getColumnValue(row, columnIndexes, []string{"фамилия", "lastname", "surname"})
+		phone := h.getColumnValue(row, columnIndexes, []string{"телефон", "phone", "тел"})
+		email := h.getColumnValue(row, columnIndexes, []string{"email", "почта"})
+		experience := h.getColumnValue(row, columnIndexes, []string{"опыт", "experience", "опыт работы"})
+		description := h.getColumnValue(row, columnIndexes, []string{"описание", "description"})
+		specializations := h.getColumnValue(row, columnIndexes, []string{"специализации", "specializations", "специализация"})
+		city := h.getColumnValue(row, columnIndexes, []string{"город", "city"})
+		region := h.getColumnValue(row, columnIndexes, []string{"регион", "region"})
+
+		// Проверяем обязательные поля
+		if firstName == "" || lastName == "" || phone == "" {
+			InfoLog.Printf("Пропускаем строку %d: отсутствуют обязательные поля (Имя: %s, Фамилия: %s, Телефон: %s)",
+				i+2, firstName, lastName, phone)
 			continue
 		}
 
 		// Парсим опыт работы
 		var experienceYears sql.NullInt64
-		if expStr := strings.TrimSpace(row[4]); expStr != "" {
+		if expStr := strings.TrimSpace(experience); expStr != "" {
 			if years, err := extractYearsFromExperience(expStr); err == nil {
 				experienceYears = sql.NullInt64{Int64: int64(years), Valid: true}
 			}
 		}
 
 		vet := models.Veterinarian{
-			FirstName:       strings.TrimSpace(row[0]),
-			LastName:        strings.TrimSpace(row[1]),
-			Phone:           strings.TrimSpace(row[2]),
-			Email:           sql.NullString{String: strings.TrimSpace(row[3]), Valid: row[3] != ""},
+			FirstName:       strings.TrimSpace(firstName),
+			LastName:        strings.TrimSpace(lastName),
+			Phone:           strings.TrimSpace(phone),
+			Email:           sql.NullString{String: strings.TrimSpace(email), Valid: email != ""},
 			ExperienceYears: experienceYears,
-			Description:     sql.NullString{String: strings.TrimSpace(row[5]), Valid: row[5] != ""},
+			Description:     sql.NullString{String: strings.TrimSpace(description), Valid: description != ""},
 			IsActive:        true,
 			CreatedAt:       time.Now(),
 		}
 
 		// Получаем CityID по имени города
-		cityID, err := h.getOrCreateCityID(strings.TrimSpace(row[7]), strings.TrimSpace(row[8]))
-		if err != nil {
-			log.Printf("Ошибка получения CityID для города %s: %v", row[7], err)
-			continue
+		if city != "" {
+			cityID, err := h.getOrCreateCityID(strings.TrimSpace(city), strings.TrimSpace(region))
+			if err != nil {
+				InfoLog.Printf("Ошибка получения CityID для города %s: %v", city, err)
+			} else {
+				vet.CityID = sql.NullInt64{Int64: int64(cityID), Valid: true}
+			}
 		}
-		vet.CityID = sql.NullInt64{Int64: int64(cityID), Valid: true}
 
 		// Обрабатываем специализации
-		if specStr := strings.TrimSpace(row[6]); specStr != "" {
-			specializations, err := h.processSpecializations(specStr)
+		if specStr := strings.TrimSpace(specializations); specStr != "" {
+			specializationsList, err := h.processSpecializations(specStr)
 			if err != nil {
-				log.Printf("Ошибка обработки специализаций для %s: %v", vet.FirstName, err)
+				InfoLog.Printf("Ошибка обработки специализаций для %s %s: %v", firstName, lastName, err)
 			} else {
-				vet.Specializations = specializations
+				vet.Specializations = specializationsList
 			}
 		}
 
 		vets = append(vets, vet)
+		InfoLog.Printf("Добавлен ветеринар: %s %s, телефон: %s", firstName, lastName, phone)
 	}
 
+	InfoLog.Printf("Успешно обработано ветеринаров: %d из %d", len(vets), len(rows)-1)
 	return vets, nil
 }
 
