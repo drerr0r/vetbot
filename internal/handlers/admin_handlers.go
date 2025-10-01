@@ -3,11 +3,16 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/drerr0r/vetbot/internal/database"
+	"github.com/drerr0r/vetbot/internal/imports"
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/drerr0r/vetbot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -2557,4 +2562,33 @@ func (h *AdminHandlers) handleCitySearchRegion(update tgbotapi.Update, region st
 	msg.ReplyMarkup = keyboard
 
 	h.bot.Send(msg)
+}
+
+func (h *AdminHandlers) GenerateImportTemplate(w http.ResponseWriter, r *http.Request) {
+	// Генерируем уникальное имя файла
+	filename := fmt.Sprintf("vet_import_template_%s.xlsx", time.Now().Format("20060102_150405"))
+	filepath := filepath.Join(os.TempDir(), filename)
+
+	// Получаем конкретную реализацию базы данных через type assertion
+	dbImpl, ok := h.db.(*database.Database)
+	if !ok {
+		http.Error(w, "Неверный тип базы данных", http.StatusInternalServerError)
+		return
+	}
+
+	// Создаем генератор и генерируем шаблон
+	generator := imports.NewTemplateGenerator(dbImpl)
+	err := generator.GenerateTemplate(filepath)
+	if err != nil {
+		http.Error(w, "Ошибка генерации шаблона: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Отдаем файл пользователю
+	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	http.ServeFile(w, r, filepath)
+
+	// Удаляем временный файл
+	defer os.Remove(filepath)
 }
