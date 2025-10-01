@@ -967,6 +967,7 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 		}
 
 		// Расписание для выбранного дня
+		// Расписание для выбранного дня
 		schedules, err := h.db.GetSchedulesByVetID(vet.ID)
 		if err == nil {
 			for _, schedule := range schedules {
@@ -974,6 +975,7 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 					scheduleDayName := getDayName(schedule.DayOfWeek)
 					startTime := schedule.StartTime
 					endTime := schedule.EndTime
+					// Проверяем, что время корректное
 					if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
 						sb.WriteString(fmt.Sprintf("🕐 *%s:* %s-%s", scheduleDayName, startTime, endTime))
 						if schedule.Clinic != nil && schedule.Clinic.Name != "" {
@@ -1100,20 +1102,37 @@ func (h *VetHandlers) formatVeterinarianInfo(vet *models.Veterinarian, index int
 	if err == nil && len(schedules) > 0 {
 		sb.WriteString("🕐 *Расписание:* ")
 		scheduleDays := make([]string, 0)
+
+		// Группируем расписание по дням
+		daySchedules := make(map[int][]string)
 		for _, schedule := range schedules {
-			dayName := getDayName(schedule.DayOfWeek)
-			startTime := schedule.StartTime
-			endTime := schedule.EndTime
-			if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
-				scheduleInfo := fmt.Sprintf("%s %s-%s", dayName, startTime, endTime)
+			if schedule.StartTime != "" && schedule.EndTime != "" &&
+				schedule.StartTime != "00:00" && schedule.EndTime != "00:00" {
+
+				clinicName := ""
 				if schedule.Clinic != nil && schedule.Clinic.Name != "" {
-					scheduleInfo += fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name))
+					clinicName = fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name))
 				}
-				scheduleDays = append(scheduleDays, scheduleInfo)
+
+				scheduleInfo := fmt.Sprintf("%s-%s%s",
+					schedule.StartTime, schedule.EndTime, clinicName)
+
+				daySchedules[schedule.DayOfWeek] = append(daySchedules[schedule.DayOfWeek], scheduleInfo)
 			}
 		}
+
+		// Формируем строку расписания
+		for day := 1; day <= 7; day++ {
+			if times, exists := daySchedules[day]; exists && len(times) > 0 {
+				dayName := getDayName(day)
+				scheduleDays = append(scheduleDays, fmt.Sprintf("%s %s", dayName, strings.Join(times, ", ")))
+			}
+		}
+
 		if len(scheduleDays) > 0 {
-			sb.WriteString(strings.Join(scheduleDays, ", "))
+			sb.WriteString(strings.Join(scheduleDays, "; "))
+		} else {
+			sb.WriteString("не указано")
 		}
 		sb.WriteString("\n")
 	}

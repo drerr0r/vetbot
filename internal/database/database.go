@@ -189,13 +189,16 @@ func (d *Database) GetAllClinics() ([]*models.Clinic, error) {
 // GetSchedulesByVetID возвращает расписание врача
 func (d *Database) GetSchedulesByVetID(vetID int) ([]*models.Schedule, error) {
 	query := `
-		SELECT s.id, s.vet_id, s.clinic_id, s.day_of_week, s.start_time, s.end_time, 
-		       s.is_available, s.created_at,
-		       c.name, c.address, c.phone, c.working_hours, c.is_active, c.created_at
-		FROM schedules s
-		LEFT JOIN clinics c ON s.clinic_id = c.id
-		WHERE s.vet_id = $1 AND s.is_available = true
-		ORDER BY s.day_of_week, s.start_time`
+        SELECT s.id, s.vet_id, s.clinic_id, s.day_of_week, 
+               TO_CHAR(s.start_time, 'HH24:MI') as start_time,
+               TO_CHAR(s.end_time, 'HH24:MI') as end_time,
+               s.is_available, s.created_at,
+               c.id, c.name, c.address, c.phone, c.working_hours, 
+               c.is_active, c.city_id, c.district, c.metro_station, c.created_at
+        FROM schedules s
+        LEFT JOIN clinics c ON s.clinic_id = c.id
+        WHERE s.vet_id = $1 AND s.is_available = true
+        ORDER BY s.day_of_week, s.start_time`
 
 	rows, err := d.db.Query(query, vetID)
 	if err != nil {
@@ -207,19 +210,25 @@ func (d *Database) GetSchedulesByVetID(vetID int) ([]*models.Schedule, error) {
 	for rows.Next() {
 		var schedule models.Schedule
 		var clinic models.Clinic
-		var clinicPhone, clinicWorkingHours sql.NullString
+		var startTimeStr, endTimeStr string
 
-		err := rows.Scan(&schedule.ID, &schedule.VetID, &schedule.ClinicID, &schedule.DayOfWeek,
-			&schedule.StartTime, &schedule.EndTime, &schedule.IsAvailable, &schedule.CreatedAt,
-			&clinic.Name, &clinic.Address, &clinicPhone, &clinicWorkingHours, &clinic.IsActive, &clinic.CreatedAt)
-
+		err := rows.Scan(
+			&schedule.ID, &schedule.VetID, &schedule.ClinicID, &schedule.DayOfWeek,
+			&startTimeStr, &endTimeStr,
+			&schedule.IsAvailable, &schedule.CreatedAt,
+			&clinic.ID, &clinic.Name, &clinic.Address, &clinic.Phone,
+			&clinic.WorkingHours, &clinic.IsActive, &clinic.CityID,
+			&clinic.District, &clinic.MetroStation, &clinic.CreatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}
 
-		clinic.Phone = clinicPhone
-		clinic.WorkingHours = clinicWorkingHours
+		// Используем строковое представление времени
+		schedule.StartTime = startTimeStr
+		schedule.EndTime = endTimeStr
 		schedule.Clinic = &clinic
+
 		schedules = append(schedules, &schedule)
 	}
 
