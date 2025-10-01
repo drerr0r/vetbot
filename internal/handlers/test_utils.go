@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/drerr0r/vetbot/pkg/utils"
@@ -581,4 +582,118 @@ func CreateTestAdminHandlers() (*AdminHandlers, *MockBot, *MockDatabase) {
 	config := CreateTestConfig()
 	handlers := NewAdminHandlers(mockBot, mockDB, config)
 	return handlers, mockBot, mockDB
+}
+
+// DeleteCity удаляет город
+func (m *MockDatabase) DeleteCity(id int) error {
+	delete(m.Cities, id)
+	return nil
+}
+
+// UpdateCity обновляет город
+func (m *MockDatabase) UpdateCity(city *models.City) error {
+	if _, exists := m.Cities[city.ID]; !exists {
+		return fmt.Errorf("city not found")
+	}
+	m.Cities[city.ID] = city
+	return nil
+}
+
+// SearchCitiesByRegion ищет города по региону
+func (m *MockDatabase) SearchCitiesByRegion(region string) ([]*models.City, error) {
+	if m.CitiesError != nil {
+		return nil, m.CitiesError
+	}
+
+	result := make([]*models.City, 0)
+	for _, city := range m.Cities {
+		if containsIgnoreCase(city.Region, region) {
+			result = append(result, city)
+		}
+	}
+	return result, nil
+}
+
+// CreateVeterinarian создает нового ветеринара
+func (m *MockDatabase) CreateVeterinarian(vet *models.Veterinarian) error {
+	if m.VeterinariansError != nil {
+		return m.VeterinariansError
+	}
+
+	// Генерируем ID если не установлен
+	if vet.ID == 0 {
+		vet.ID = len(m.Veterinarians) + 1
+	}
+
+	// Устанавливаем время создания если не установлено
+	if vet.CreatedAt.IsZero() {
+		vet.CreatedAt = time.Now()
+	}
+
+	// Создаем копию ветеринара, чтобы избежать изменений исходного объекта
+	newVet := *vet
+	m.Veterinarians[newVet.ID] = &newVet
+
+	return nil
+}
+
+// UpdateVeterinarian обновляет данные ветеринара
+func (m *MockDatabase) UpdateVeterinarian(vet *models.Veterinarian) error {
+	if m.VeterinariansError != nil {
+		return m.VeterinariansError
+	}
+
+	if _, exists := m.Veterinarians[vet.ID]; !exists {
+		return sql.ErrNoRows
+	}
+
+	m.Veterinarians[vet.ID] = vet
+	return nil
+}
+
+// GetUserByTelegramID возвращает пользователя по Telegram ID
+func (m *MockDatabase) GetUserByTelegramID(telegramID int64) (*models.User, error) {
+	if m.UserError != nil {
+		return nil, m.UserError
+	}
+
+	user, exists := m.Users[telegramID]
+	if !exists {
+		return nil, sql.ErrNoRows
+	}
+
+	return user, nil
+}
+
+// CreateClinic создает новую клинику (аналог CreateClinicWithCity для совместимости)
+func (m *MockDatabase) CreateClinic(clinic *models.Clinic) error {
+	return m.CreateClinicWithCity(clinic)
+}
+
+// DeleteClinic удаляет клинику
+func (m *MockDatabase) DeleteClinic(id int) error {
+	if m.ClinicsError != nil {
+		return m.ClinicsError
+	}
+
+	if _, exists := m.Clinics[id]; !exists {
+		return sql.ErrNoRows
+	}
+
+	delete(m.Clinics, id)
+	return nil
+}
+
+// DeleteVeterinarian удаляет ветеринара (может понадобиться в будущем)
+func (m *MockDatabase) DeleteVeterinarian(id int) error {
+	if m.VeterinariansError != nil {
+		return m.VeterinariansError
+	}
+
+	if _, exists := m.Veterinarians[id]; !exists {
+		return sql.ErrNoRows
+	}
+
+	delete(m.Veterinarians, id)
+	return nil
 }

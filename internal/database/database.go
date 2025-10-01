@@ -288,10 +288,14 @@ func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models
 
 // ========== НОВЫЕ МЕТОДЫ ДЛЯ АДМИНКИ ==========
 
-// GetAllVeterinarians возвращает всех врачей
+// GetAllVeterinarians возвращает всех врачей с информацией о городах
 func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
-	query := `SELECT id, first_name, last_name, phone, email, description, experience_years, is_active, created_at 
-              FROM veterinarians ORDER BY first_name, last_name`
+	query := `SELECT v.id, v.first_name, v.last_name, v.phone, v.email, v.description, 
+	                 v.experience_years, v.is_active, v.city_id, v.created_at,
+	                 c.id, c.name, c.region, c.created_at
+              FROM veterinarians v
+              LEFT JOIN cities c ON v.city_id = c.id
+              ORDER BY v.first_name, v.last_name`
 
 	rows, err := d.db.Query(query)
 	if err != nil {
@@ -302,28 +306,51 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 	var vets []*models.Veterinarian
 	for rows.Next() {
 		var vet models.Veterinarian
+		var cityID sql.NullInt64
+		var city models.City
+		var cityCreatedAt time.Time
+
 		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
+			&city.ID, &city.Name, &city.Region, &cityCreatedAt)
 		if err != nil {
 			return nil, err
 		}
+
+		vet.CityID = cityID
+		if cityID.Valid {
+			city.CreatedAt = cityCreatedAt
+			vet.City = &city
+		}
+
 		vets = append(vets, &vet)
 	}
 
 	return vets, nil
 }
 
-// GetVeterinarianByID возвращает врача по ID
+// GetVeterinarianByID возвращает врача по ID с информацией о городе
 func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
-	query := `SELECT id, first_name, last_name, phone, email, description, experience_years, is_active, created_at 
+	query := `SELECT id, first_name, last_name, phone, email, description, experience_years, is_active, city_id, created_at 
               FROM veterinarians WHERE id = $1`
 
 	var vet models.Veterinarian
+	var cityID sql.NullInt64
+
 	err := d.db.QueryRow(query, id).Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone,
-		&vet.Email, &vet.Description, &vet.ExperienceYears,
-		&vet.IsActive, &vet.CreatedAt)
+		&vet.Email, &vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+
+	vet.CityID = cityID
+
+	// Загружаем информацию о городе если есть
+	if cityID.Valid {
+		city, err := d.GetCityByID(int(cityID.Int64))
+		if err == nil {
+			vet.City = city
+		}
 	}
 
 	return &vet, nil
@@ -641,4 +668,68 @@ func (d *Database) SearchCities(queryStr string) ([]*models.City, error) {
 		cities = append(cities, &city)
 	}
 	return cities, nil
+}
+
+// UpdateVeterinarian обновляет данные врача
+func (d *Database) UpdateVeterinarian(vet *models.Veterinarian) error {
+	query := `UPDATE veterinarians SET 
+		first_name = $1, last_name = $2, phone = $3, email = $4, 
+		description = $5, experience_years = $6, is_active = $7, city_id = $8
+		WHERE id = $9`
+
+	_, err := d.db.Exec(query,
+		vet.FirstName, vet.LastName, vet.Phone, vet.Email,
+		vet.Description, vet.ExperienceYears, vet.IsActive, vet.CityID, vet.ID,
+	)
+	return err
+}
+
+// CreateVeterinarian создает нового врача
+func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
+	query := `INSERT INTO veterinarians 
+		(first_name, last_name, phone, email, description, experience_years, is_active, city_id) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+		RETURNING id, created_at`
+
+	return d.db.QueryRow(query,
+		vet.FirstName, vet.LastName, vet.Phone, vet.Email,
+		vet.Description, vet.ExperienceYears, vet.IsActive, vet.CityID,
+	).Scan(&vet.ID, &vet.CreatedAt)
+}
+
+func (d *Database) SearchCitiesByRegion(region string) ([]*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities 
+              WHERE region ILIKE $1 ORDER BY name`
+
+	rows, err := d.db.Query(query, "%"+region+"%") // Исправлено с db.DB на d.db
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cities []*models.City
+	for rows.Next() {
+		var city models.City
+		err := rows.Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		cities = append(cities, &city)
+	}
+
+	return cities, nil
+}
+
+// DeleteCity удаляет город по ID
+func (d *Database) DeleteCity(id int) error {
+	query := "DELETE FROM cities WHERE id = $1"
+	_, err := d.db.Exec(query, id)
+	return err
+}
+
+// UpdateCity обновляет данные города
+func (d *Database) UpdateCity(city *models.City) error {
+	query := "UPDATE cities SET name = $1, region = $2 WHERE id = $3"
+	_, err := d.db.Exec(query, city.Name, city.Region, city.ID)
+	return err
 }

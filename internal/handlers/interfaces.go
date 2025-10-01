@@ -29,13 +29,7 @@ type Database interface {
 	SpecializationExists(id int) (bool, error)
 	AddMissingColumns() error
 	Close() error
-	GetDB() *sql.DB // Исправлено: возвращаем конкретный тип
-
-	// Новые методы для работы с городами
-	GetAllCities() ([]*models.City, error)
-	GetCityByID(id int) (*models.City, error)
-	GetCityByName(name string) (*models.City, error)
-	CreateCity(city *models.City) error
+	GetDB() *sql.DB
 
 	// Новые методы для расширенного поиска
 	GetClinicsByCity(cityID int) ([]*models.Clinic, error)
@@ -47,4 +41,17 @@ type Database interface {
 	CreateClinicWithCity(clinic *models.Clinic) error
 	GetAllClinicsWithCities() ([]*models.Clinic, error)
 	UpdateClinic(clinic *models.Clinic) error
+
+	// Методы для городов
+	CreateCity(city *models.City) error
+	GetCityByID(id int) (*models.City, error)
+	GetCityByName(name string) (*models.City, error)
+	GetAllCities() ([]*models.City, error)
+	SearchCitiesByRegion(region string) ([]*models.City, error)
+	UpdateCity(city *models.City) error
+	DeleteCity(id int) error
+
+	// Методы для врачей
+	CreateVeterinarian(vet *models.Veterinarian) error
+	UpdateVeterinarian(vet *models.Veterinarian) error
 }

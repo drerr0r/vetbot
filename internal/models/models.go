@@ -34,8 +34,12 @@ type Veterinarian struct {
 	Description     sql.NullString    `json:"description"`      // Может быть NULL
 	ExperienceYears sql.NullInt64     `json:"experience_years"` // Может быть NULL
 	IsActive        bool              `json:"is_active"`
+	CityID          sql.NullInt64     `json:"city_id"`         // Ссылка на город
 	Specializations []*Specialization `json:"specializations"` // Исправлено на указатели
 	CreatedAt       time.Time         `json:"created_at"`
+
+	// Для удобства - связанные данные
+	City *City `json:"city,omitempty"`
 }
 
 // City представляет населенный пункт
@@ -135,4 +139,11 @@ type SearchCriteria struct {
 	CityName         string `json:"city_name"`     // Поиск по названию города
 	District         string `json:"district"`      // Поиск по району
 	MetroStation     string `json:"metro_station"` // Поиск по станции метро
+}
+
+// CityEditData временные данные для редактирования города
+type CityEditData struct {
+	CityID       int
+	Field        string
+	CurrentValue string
 }

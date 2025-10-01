@@ -43,11 +43,14 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 			tgbotapi.NewKeyboardButton("🏥 Управление клиниками"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏙️ Управление городами"), // ДОБАВИТЬ ЭТУ КНОПКУ
 			tgbotapi.NewKeyboardButton("📥 Импорт данных"),
-			tgbotapi.NewKeyboardButton("📊 Статистика"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("📊 Статистика"),
 			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("❌ Выйти из админки"),
 		),
 	)
@@ -61,7 +64,6 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 	h.bot.Send(msg)
 }
 
-// HandleAdminMessage обрабатывает текстовые сообщения в админском режиме
 func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 	text := update.Message.Text
@@ -82,6 +84,8 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleVetManagement(update, text)
 	case "clinic_management":
 		h.handleClinicManagement(update, text)
+	case "city_management":
+		h.handleCityManagement(update, text)
 	case "import_menu":
 		h.handleImportMenu(update, text)
 	case "add_vet_name":
@@ -98,6 +102,8 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleVetEditField(update, text)
 	case "vet_edit_specializations":
 		h.handleVetEditSpecializations(update, text)
+	case "vet_edit_city": // ← ТОЛЬКО ОДИН РАЗ
+		h.handleVetEditCity(update, text)
 	case "vet_confirm_delete":
 		h.handleVetConfirmDelete(update, text)
 	case "vet_toggle_active":
@@ -112,6 +118,24 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleClinicConfirmDelete(update, text)
 	case "clinic_toggle_active":
 		h.handleClinicToggleActive(update, text)
+	case "add_city_name":
+		h.handleAddCityName(update, text)
+	case "add_city_region":
+		h.handleAddCityRegion(update, text)
+	case "city_list":
+		h.handleCityListSelection(update, text)
+	case "city_edit_menu":
+		h.handleCityEditMenu(update, text)
+	case "city_edit_name":
+		h.handleCityEditName(update, text)
+	case "city_edit_region":
+		h.handleCityEditRegion(update, text)
+	case "city_confirm_delete":
+		h.handleCityConfirmDelete(update, text)
+	case "vet_search_city":
+		h.handleVetSearchCity(update, text)
+	case "city_search_region": // ← ТОЛЬКО ОДИН РАЗ
+		h.handleCitySearchRegion(update, text) // Исправлено: вызываем handleCitySearchRegion вместо startSearchByRegion
 	default:
 		h.handleMainMenu(update, text)
 	}
@@ -124,25 +148,34 @@ func (h *AdminHandlers) handleBackButton(update tgbotapi.Update) {
 
 	// Определяем текущее состояние и возвращаемся на уровень выше
 	switch currentState {
-	case "vet_management", "clinic_management", "import_menu":
-		// Возврат из подменю в главное меню
+	case "vet_management", "clinic_management", "city_management", "import_menu":
 		h.adminState[userID] = "main_menu"
 		h.HandleAdmin(update)
-	case "vet_list", "vet_edit_menu", "vet_edit_field", "vet_edit_specializations", "vet_confirm_delete", "vet_toggle_active":
-		// Возврат из операций с врачами в меню управления врачами
+	case "vet_list", "vet_edit_menu", "vet_edit_field", "vet_edit_specializations",
+		// ДОБАВИТЬ ЭТИ СОСТОЯНИЯ ↓
+		"vet_edit_city", "vet_confirm_delete", "vet_toggle_active":
 		h.adminState[userID] = "vet_management"
 		h.showVetManagement(update)
 	case "clinic_list", "clinic_edit_menu", "clinic_edit_field", "clinic_confirm_delete", "clinic_toggle_active":
-		// Возврат из операций с клиниками в меню управления клиниками
 		h.adminState[userID] = "clinic_management"
 		h.showClinicManagement(update)
+	case "city_list", "city_edit_menu", "city_edit_name", "city_edit_region",
+		// ДОБАВИТЬ ЭТО СОСТОЯНИЕ ↓
+		"city_search_region", "city_confirm_delete":
+		h.adminState[userID] = "city_management"
+		h.showCityManagement(update)
+	case "vet_search_city":
+		h.adminState[userID] = "vet_management"
+		h.showVetManagement(update)
 	case "add_vet_name", "add_vet_phone", "add_vet_specializations":
-		// Возврат из процесса добавления врача в меню управления врачами
 		h.adminState[userID] = "vet_management"
 		h.cleanTempData(userID)
 		h.showVetManagement(update)
+	case "add_city_name", "add_city_region":
+		h.adminState[userID] = "city_management"
+		h.cleanTempData(userID)
+		h.showCityManagement(update)
 	default:
-		// По умолчанию возвращаем в главное меню
 		h.adminState[userID] = "main_menu"
 		h.HandleAdmin(update)
 	}
@@ -155,6 +188,9 @@ func (h *AdminHandlers) cleanTempData(userID int64) {
 	delete(h.tempData, userIDStr+"_phone")
 	delete(h.tempData, userIDStr+"_vet_edit")
 	delete(h.tempData, userIDStr+"_clinic_edit")
+	delete(h.tempData, userIDStr+"_city_edit")
+	delete(h.tempData, userIDStr+"_new_city")
+	delete(h.tempData, userIDStr+"_cities")
 }
 
 // handleMainMenu обрабатывает главное меню админки
@@ -164,6 +200,8 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showVetManagement(update)
 	case "🏥 Управление клиниками":
 		h.showClinicManagement(update)
+	case "🏙️ Управление городами": // ДОБАВИТЬ ЭТОТ CASE
+		h.showCityManagement(update)
 	case "📥 Импорт данных":
 		h.showImportMenu(update)
 	case "📊 Статистика":
@@ -641,10 +679,14 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("💼 Редактировать опыт"),
-			tgbotapi.NewKeyboardButton("⚡ Изменить статус"),
+			// УБЕДИТЕСЬ ЧТО ЭТА КНОПКА ЕСТЬ ↓
+			tgbotapi.NewKeyboardButton("🏙️ Изменить город"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("⚡ Изменить статус"),
 			tgbotapi.NewKeyboardButton("🗑️ Удалить врача"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("🔙 Назад"),
 		),
 	)
@@ -747,6 +789,9 @@ func (h *AdminHandlers) handleVetEditMenu(update tgbotapi.Update, text string) {
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
 		h.bot.Send(msg)
+
+	case "🏙️ Изменить город":
+		h.startChangeVetCity(update, vet)
 
 	case "⚡ Изменить статус":
 		h.adminState[userID] = "vet_toggle_active"
@@ -1662,4 +1707,850 @@ func (h *AdminHandlers) getRequestCount() (int, error) {
 	var count int
 	err := h.db.GetDB().QueryRow(query).Scan(&count)
 	return count, err
+}
+
+// ========== УПРАВЛЕНИЕ ГОРОДАМИ ==========
+
+// showCityManagement показывает меню управления городами
+func (h *AdminHandlers) showCityManagement(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "city_management"
+
+	// Получаем статистику городов
+	citiesCount, _ := h.getCitiesCount()
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("➕ Добавить город"),
+			tgbotapi.NewKeyboardButton("📋 Список городов"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔍 Поиск по региону"),
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("🏙️ *Управление городами*\n\nВсего городов: %d\n\nВыберите действие:", citiesCount))
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
+}
+
+// handleCityManagement обрабатывает меню управления городами
+func (h *AdminHandlers) handleCityManagement(update tgbotapi.Update, text string) {
+	switch text {
+	case "➕ Добавить город":
+		h.startAddCity(update)
+	case "📋 Список городов":
+		h.showCityList(update)
+	case "🔍 Поиск по региону":
+		h.startSearchByRegion(update)
+	case "🔙 Назад":
+		h.handleBackButton(update)
+	default:
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Используйте кнопки меню управления городами")
+		h.bot.Send(msg)
+	}
+}
+
+// startAddCity начинает процесс добавления города
+func (h *AdminHandlers) startAddCity(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "add_city_name"
+
+	removeKeyboard := tgbotapi.NewRemoveKeyboard(true)
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"🏙️ *Добавление нового города*\n\nВведите название города:")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = removeKeyboard
+
+	h.bot.Send(msg)
+}
+
+// handleAddCityName обрабатывает ввод названия города
+func (h *AdminHandlers) handleAddCityName(update tgbotapi.Update, name string) {
+	userID := update.Message.From.ID
+
+	// Проверяем, не существует ли уже город с таким названием
+	existingCity, err := h.db.GetCityByName(name)
+	if err == nil && existingCity != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Город *%s* уже существует в регионе *%s*!\n\nВведите другое название города:", existingCity.Name, existingCity.Region))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+		return
+	}
+
+	h.adminState[userID] = "add_city_region"
+
+	// Сохраняем название города во временные данные
+	userIDStr := strconv.FormatInt(userID, 10)
+	h.tempData[userIDStr+"_new_city"] = &models.City{
+		Name: strings.TrimSpace(name),
+	}
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"🏙️ Теперь введите регион (область) для города *"+name+"*:")
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// handleAddCityRegion обрабатывает ввод региона города
+func (h *AdminHandlers) handleAddCityRegion(update tgbotapi.Update, region string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	// Получаем город из временных данных
+	cityInterface, exists := h.tempData[userIDStr+"_new_city"]
+	if !exists {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные о городе не найдены")
+		h.bot.Send(msg)
+		return
+	}
+
+	city := cityInterface.(*models.City)
+	city.Region = strings.TrimSpace(region)
+
+	// Сохраняем город в базу
+	err := h.db.CreateCity(city)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка при добавлении города: %s", err.Error()))
+		h.bot.Send(msg)
+		return
+	}
+
+	// Очищаем временные данные
+	delete(h.tempData, userIDStr+"_new_city")
+
+	// Показываем клавиатуру управления городами
+	h.showCityManagement(update)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("✅ Город *%s* (%s) успешно добавлен! 🏙️", city.Name, city.Region))
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+// showCityList показывает список всех городов
+func (h *AdminHandlers) showCityList(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "city_list"
+
+	cities, err := h.db.GetAllCities()
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка при получении списка городов")
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(cities) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "📭 Список городов пуст")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Сортируем города по названию
+	sort.Slice(cities, func(i, j int) bool {
+		return cities[i].Name < cities[j].Name
+	})
+
+	var sb strings.Builder
+	sb.WriteString("🏙️ *Список городов:*\n\n")
+
+	for i, city := range cities {
+		sb.WriteString(fmt.Sprintf("%d. *%s*\n", i+1, city.Name))
+		sb.WriteString(fmt.Sprintf("   📍 Регион: %s\n", city.Region))
+		sb.WriteString(fmt.Sprintf("   🆔 ID: %d\n\n", city.ID))
+	}
+
+	sb.WriteString("Введите номер города для управления:")
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	// Сохраняем список городов во временные данные
+	userIDStr := strconv.FormatInt(userID, 10)
+	h.tempData[userIDStr+"_cities"] = cities
+
+	h.bot.Send(msg)
+}
+
+// handleCityListSelection обрабатывает выбор города из списка
+func (h *AdminHandlers) handleCityListSelection(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	// Получаем список городов из временных данных
+	citiesInterface, exists := h.tempData[userIDStr+"_cities"]
+	if !exists {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные о городах не найдены")
+		h.bot.Send(msg)
+		return
+	}
+
+	cities := citiesInterface.([]*models.City)
+
+	// Парсим номер города
+	cityNum, err := strconv.Atoi(text)
+	if err != nil || cityNum < 1 || cityNum > len(cities) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Неверный номер города. Попробуйте снова.")
+		h.bot.Send(msg)
+		return
+	}
+
+	selectedCity := cities[cityNum-1]
+	h.showCityEditMenu(update, selectedCity)
+}
+
+// showCityEditMenu показывает меню редактирования города
+func (h *AdminHandlers) showCityEditMenu(update tgbotapi.Update, city *models.City) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "city_edit_menu"
+
+	// Сохраняем ID города во временные данные
+	userIDStr := strconv.FormatInt(userID, 10)
+	h.tempData[userIDStr+"_city_edit"] = &models.CityEditData{
+		CityID: city.ID,
+	}
+
+	// Получаем статистику по городу
+	vetsInCity, _ := h.getVetsCountByCity(city.ID)
+	clinicsInCity, _ := h.getClinicsCountByCity(city.ID)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🏙️ *Управление городом:* %s\n\n", city.Name))
+	sb.WriteString(fmt.Sprintf("📍 Регион: %s\n", city.Region))
+	sb.WriteString(fmt.Sprintf("🆔 ID: %d\n", city.ID))
+	sb.WriteString(fmt.Sprintf("📅 Добавлен: %s\n", city.CreatedAt.Format("02.01.2006")))
+	sb.WriteString(fmt.Sprintf("👥 Врачей в городе: %d\n", vetsInCity))
+	sb.WriteString(fmt.Sprintf("🏥 Клиник в городе: %d\n\n", clinicsInCity))
+	sb.WriteString("Выберите действие:")
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("✏️ Редактировать название"),
+			tgbotapi.NewKeyboardButton("📍 Редактировать регион"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("👥 Показать врачей"),
+			tgbotapi.NewKeyboardButton("🏥 Показать клиники"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🗑️ Удалить город"),
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
+}
+
+// handleCityEditMenu обрабатывает выбор действия для города
+func (h *AdminHandlers) handleCityEditMenu(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	cityData, ok := h.tempData[userIDStr+"_city_edit"].(*models.CityEditData)
+	if !ok || cityData == nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные города не найдены")
+		h.bot.Send(msg)
+		h.showCityList(update)
+		return
+	}
+
+	// Получаем актуальные данные города
+	city, err := h.db.GetCityByID(cityData.CityID)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении данных города")
+		h.bot.Send(msg)
+		h.showCityList(update)
+		return
+	}
+
+	switch text {
+	case "✏️ Редактировать название":
+		h.adminState[userID] = "city_edit_name"
+		cityData.Field = "name"
+		cityData.CurrentValue = city.Name
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("Введите новое название для города *%s*:", city.Name))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+
+	case "📍 Редактировать регион":
+		h.adminState[userID] = "city_edit_region"
+		cityData.Field = "region"
+		cityData.CurrentValue = city.Region
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("Введите новый регион для города *%s*:\n\nТекущий регион: %s", city.Name, city.Region))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+
+	case "👥 Показать врачей":
+		h.showVetsInCity(update, city)
+
+	case "🏥 Показать клиники":
+		h.showClinicsInCity(update, city)
+
+	case "🗑️ Удалить город":
+		h.startDeleteCity(update, city)
+
+	case "🔙 Назад":
+		h.handleBackButton(update)
+
+	default:
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Используйте кнопки для управления")
+		h.bot.Send(msg)
+	}
+}
+
+// handleCityEditName обрабатывает ввод нового названия города
+func (h *AdminHandlers) handleCityEditName(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	cityData, ok := h.tempData[userIDStr+"_city_edit"].(*models.CityEditData)
+	if !ok || cityData == nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные города не найдены")
+		h.bot.Send(msg)
+		h.showCityList(update)
+		return
+	}
+
+	newName := strings.TrimSpace(text)
+	if newName == "" {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Название города не может быть пустым")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Проверяем, не существует ли уже город с таким названием
+	existingCity, err := h.db.GetCityByName(newName)
+	if err == nil && existingCity != nil && existingCity.ID != cityData.CityID {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Город *%s* уже существует в регионе *%s*!\n\nВведите другое название:", existingCity.Name, existingCity.Region))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+		return
+	}
+
+	// Обновляем название города
+	err = h.updateCityField(cityData.CityID, "name", newName)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка при обновлении названия: %s", err.Error()))
+		h.bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("✅ Название города успешно изменено на: *%s*", newName))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+	}
+
+	// Возвращаем в меню редактирования города
+	city, err := h.db.GetCityByID(cityData.CityID)
+	if err == nil {
+		h.showCityEditMenu(update, city)
+	} else {
+		h.showCityList(update)
+	}
+}
+
+// handleCityEditRegion обрабатывает ввод нового региона города
+func (h *AdminHandlers) handleCityEditRegion(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	cityData, ok := h.tempData[userIDStr+"_city_edit"].(*models.CityEditData)
+	if !ok || cityData == nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные города не найдены")
+		h.bot.Send(msg)
+		h.showCityList(update)
+		return
+	}
+
+	newRegion := strings.TrimSpace(text)
+	if newRegion == "" {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Регион не может быть пустым")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Обновляем регион города
+	err := h.updateCityField(cityData.CityID, "region", newRegion)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка при обновлении региона: %s", err.Error()))
+		h.bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("✅ Регион города успешно изменен на: *%s*", newRegion))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+	}
+
+	// Возвращаем в меню редактирования города
+	city, err := h.db.GetCityByID(cityData.CityID)
+	if err == nil {
+		h.showCityEditMenu(update, city)
+	} else {
+		h.showCityList(update)
+	}
+}
+
+// startDeleteCity начинает процесс удаления города
+func (h *AdminHandlers) startDeleteCity(update tgbotapi.Update, city *models.City) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "city_confirm_delete"
+
+	// Проверяем, есть ли связанные данные
+	vetsCount, _ := h.getVetsCountByCity(city.ID)
+	clinicsCount, _ := h.getClinicsCountByCity(city.ID)
+
+	var warningText string
+	if vetsCount > 0 || clinicsCount > 0 {
+		warningText = fmt.Sprintf("\n\n⚠️ *ВНИМАНИЕ!* В этом городе есть:\n• Врачей: %d\n• Клиник: %d\n\nЭти данные будут потеряны!", vetsCount, clinicsCount)
+	}
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("✅ Подтвердить удаление"),
+			tgbotapi.NewKeyboardButton("❌ Отмена"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("🗑️ *Удаление города*\n\nВы собираетесь удалить город:\n*%s* (%s)%s\n\nЭто действие нельзя отменить!",
+			city.Name, city.Region, warningText))
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
+}
+
+// handleCityConfirmDelete обрабатывает подтверждение удаления города
+func (h *AdminHandlers) handleCityConfirmDelete(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	cityData, ok := h.tempData[userIDStr+"_city_edit"].(*models.CityEditData)
+	if !ok || cityData == nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные города не найдены")
+		h.bot.Send(msg)
+		h.showCityList(update)
+		return
+	}
+
+	if text == "✅ Подтвердить удаление" {
+		// Получаем данные города для сообщения
+		city, err := h.db.GetCityByID(cityData.CityID)
+		if err != nil {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении данных города")
+			h.bot.Send(msg)
+			h.showCityList(update)
+			return
+		}
+
+		err = h.deleteCity(cityData.CityID)
+		if err != nil {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+				fmt.Sprintf("❌ Ошибка при удалении города: %s", err.Error()))
+			h.bot.Send(msg)
+		} else {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+				fmt.Sprintf("✅ Город *%s* успешно удален! 🗑️", city.Name))
+			msg.ParseMode = "Markdown"
+			h.bot.Send(msg)
+		}
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Удаление отменено")
+		h.bot.Send(msg)
+	}
+
+	// Возвращаем к списку городов
+	h.showCityList(update)
+}
+
+// startSearchByRegion начинает поиск по региону
+func (h *AdminHandlers) startSearchByRegion(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "city_search_region"
+
+	removeKeyboard := tgbotapi.NewRemoveKeyboard(true)
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		"🔍 *Поиск городов по региону*\n\nВведите название региона или его часть:")
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = removeKeyboard
+
+	h.bot.Send(msg)
+}
+
+// handleVetSearchCity обрабатывает выбор города для поиска врачей
+func (h *AdminHandlers) handleVetSearchCity(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	// Получаем список городов из временных данных
+	citiesInterface, exists := h.tempData[userIDStr+"_cities"]
+	if !exists {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные о городах не найдены")
+		h.bot.Send(msg)
+		return
+	}
+
+	cities := citiesInterface.([]*models.City)
+
+	// Парсим номер города
+	cityNum, err := strconv.Atoi(text)
+	if err != nil || cityNum < 1 || cityNum > len(cities) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Неверный номер города. Попробуйте снова.")
+		h.bot.Send(msg)
+		return
+	}
+
+	selectedCity := cities[cityNum-1]
+	h.showVetsInCity(update, selectedCity)
+}
+
+// showVetsInCity показывает врачей в выбранном городе
+func (h *AdminHandlers) showVetsInCity(update tgbotapi.Update, city *models.City) {
+	// Используем поиск врачей по городу
+	criteria := &models.SearchCriteria{
+		CityID: city.ID,
+	}
+
+	vets, err := h.db.FindVetsByCity(criteria)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка при поиске врачей в городе %s", city.Name))
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(vets) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("📭 В городе *%s* не найдено врачей", city.Name))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("👥 *Врачи в городе %s:*\n\n", city.Name))
+
+	for i, vet := range vets {
+		status := "✅"
+		if !vet.IsActive {
+			status = "❌"
+		}
+		sb.WriteString(fmt.Sprintf("%s %d. %s %s\n", status, i+1, vet.FirstName, vet.LastName))
+		sb.WriteString(fmt.Sprintf("   📞 %s\n", vet.Phone))
+
+		// Специализации
+		if len(vet.Specializations) > 0 {
+			var specNames []string
+			for _, spec := range vet.Specializations {
+				specNames = append(specNames, spec.Name)
+			}
+			sb.WriteString(fmt.Sprintf("   🎯 %s\n", strings.Join(specNames, ", ")))
+		}
+
+		if vet.ExperienceYears.Valid {
+			sb.WriteString(fmt.Sprintf("   💼 Опыт: %d лет\n", vet.ExperienceYears.Int64))
+		}
+		sb.WriteString("\n")
+	}
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад к городу"),
+			tgbotapi.NewKeyboardButton("🔙 В меню"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
+}
+
+// showClinicsInCity показывает клиники в выбранном городе
+func (h *AdminHandlers) showClinicsInCity(update tgbotapi.Update, city *models.City) {
+	clinics, err := h.db.GetClinicsByCity(city.ID)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка при поиске клиник в городе %s", city.Name))
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(clinics) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("📭 В городе *%s* не найдено клиник", city.Name))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🏥 *Клиники в городе %s:*\n\n", city.Name))
+
+	for i, clinic := range clinics {
+		status := "✅"
+		if !clinic.IsActive {
+			status = "❌"
+		}
+		sb.WriteString(fmt.Sprintf("%s %d. %s\n", status, i+1, clinic.Name))
+		sb.WriteString(fmt.Sprintf("   📍 %s\n", clinic.Address))
+
+		if clinic.Phone.Valid {
+			sb.WriteString(fmt.Sprintf("   📞 %s\n", clinic.Phone.String))
+		}
+
+		if clinic.WorkingHours.Valid {
+			sb.WriteString(fmt.Sprintf("   🕐 %s\n", clinic.WorkingHours.String))
+		}
+		sb.WriteString("\n")
+	}
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад к городу"),
+			tgbotapi.NewKeyboardButton("🔙 В меню"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
+}
+
+// ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ГОРОДОВ ==========
+
+// updateCityField обновляет поле города в базе данных
+func (h *AdminHandlers) updateCityField(cityID int, field string, value string) error {
+	var query string
+	var err error
+
+	switch field {
+	case "name":
+		query = "UPDATE cities SET name = $1 WHERE id = $2"
+		_, err = h.db.GetDB().Exec(query, value, cityID)
+	case "region":
+		query = "UPDATE cities SET region = $1 WHERE id = $2"
+		_, err = h.db.GetDB().Exec(query, value, cityID)
+	default:
+		return fmt.Errorf("unknown field: %s", field)
+	}
+
+	return err
+}
+
+// deleteCity удаляет город из базы данных
+func (h *AdminHandlers) deleteCity(cityID int) error {
+	// Сначала обнуляем city_id у врачей
+	_, err := h.db.GetDB().Exec("UPDATE veterinarians SET city_id = NULL WHERE city_id = $1", cityID)
+	if err != nil {
+		return err
+	}
+
+	// Обнуляем city_id у клиник
+	_, err = h.db.GetDB().Exec("UPDATE clinics SET city_id = NULL WHERE city_id = $1", cityID)
+	if err != nil {
+		return err
+	}
+
+	// Удаляем город
+	_, err = h.db.GetDB().Exec("DELETE FROM cities WHERE id = $1", cityID)
+	return err
+}
+
+// getCitiesCount возвращает количество городов
+func (h *AdminHandlers) getCitiesCount() (int, error) {
+	query := "SELECT COUNT(*) FROM cities"
+	var count int
+	err := h.db.GetDB().QueryRow(query).Scan(&count)
+	return count, err
+}
+
+// getVetsCountByCity возвращает количество врачей в городе
+func (h *AdminHandlers) getVetsCountByCity(cityID int) (int, error) {
+	query := "SELECT COUNT(*) FROM veterinarians WHERE city_id = $1"
+	var count int
+	err := h.db.GetDB().QueryRow(query, cityID).Scan(&count)
+	return count, err
+}
+
+// getClinicsCountByCity возвращает количество клиник в городе
+func (h *AdminHandlers) getClinicsCountByCity(cityID int) (int, error) {
+	query := "SELECT COUNT(*) FROM clinics WHERE city_id = $1"
+	var count int
+	err := h.db.GetDB().QueryRow(query, cityID).Scan(&count)
+	return count, err
+}
+
+// handleVetEditCity обрабатывает изменение города врача
+func (h *AdminHandlers) handleVetEditCity(update tgbotapi.Update, text string) {
+	userID := update.Message.From.ID
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	// Получаем список городов из временных данных
+	citiesInterface, exists := h.tempData[userIDStr+"_cities"]
+	if !exists {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные о городах не найдены")
+		h.bot.Send(msg)
+		return
+	}
+
+	cities := citiesInterface.([]*models.City)
+
+	// Получаем ID врача
+	vetEditData, exists := h.tempData[userIDStr+"_vet_edit"]
+	if !exists {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка: данные о враче не найдены")
+		h.bot.Send(msg)
+		return
+	}
+
+	vetID := vetEditData.(*models.VetEditData).VetID
+
+	// Парсим номер города
+	cityNum, err := strconv.Atoi(text)
+	if err != nil || cityNum < 1 || cityNum > len(cities) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Неверный номер города. Попробуйте снова.")
+		h.bot.Send(msg)
+		return
+	}
+
+	selectedCity := cities[cityNum-1]
+
+	// Обновляем врача
+	vet, err := h.db.GetVeterinarianByID(vetID)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении данных врача")
+		h.bot.Send(msg)
+		return
+	}
+
+	vet.CityID.Int64 = int64(selectedCity.ID)
+	vet.CityID.Valid = true
+	vet.City = selectedCity
+
+	err = h.db.UpdateVeterinarian(vet)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка при обновлении города врача")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Очищаем временные данные
+	delete(h.tempData, userIDStr+"_cities")
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("✅ Город врача успешно изменен на: *%s* (%s) 🏙️", selectedCity.Name, selectedCity.Region))
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+
+	// Показываем меню редактирования снова
+	h.showVetEditMenu(update, vet)
+}
+
+func (h *AdminHandlers) startChangeVetCity(update tgbotapi.Update, vet *models.Veterinarian) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "vet_edit_city"
+
+	cities, err := h.db.GetAllCities()
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка при получении списка городов")
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(cities) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "📭 Городы не найдены. Сначала добавьте города.")
+		h.bot.Send(msg)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🏙️ *Выберите новый город для врача %s %s:*\n\n", vet.FirstName, vet.LastName))
+
+	for i, city := range cities {
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, city.Name, city.Region))
+	}
+
+	sb.WriteString("\nВведите номер города:")
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	// Сохраняем список городов и ID врача во временные данные
+	userIDStr := strconv.FormatInt(userID, 10)
+	h.tempData[userIDStr+"_cities"] = cities
+	h.tempData[userIDStr+"_vet_edit"] = &models.VetEditData{
+		VetID: vet.ID, // СОХРАНЯЕМ ID ВРАЧА
+	}
+
+	h.bot.Send(msg)
+}
+
+func (h *AdminHandlers) handleCitySearchRegion(update tgbotapi.Update, region string) {
+	cities, err := h.db.SearchCitiesByRegion(region)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка при поиске городов")
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(cities) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("📭 Города в регионе '*%s*' не найдены", region))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🏙️ *Города в регионе '%s':*\n\n", region))
+
+	for i, city := range cities {
+		sb.WriteString(fmt.Sprintf("%d. *%s*\n", i+1, city.Name))
+		sb.WriteString(fmt.Sprintf("   📍 Регион: %s\n", city.Region))
+		sb.WriteString(fmt.Sprintf("   🆔 ID: %d\n\n", city.ID))
+	}
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
 }

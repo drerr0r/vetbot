@@ -143,3 +143,12 @@ CREATE INDEX IF NOT EXISTS idx_schedules_is_available ON schedules(is_available)
 CREATE INDEX IF NOT EXISTS idx_vet_specializations_vet_id ON vet_specializations(vet_id);
 CREATE INDEX IF NOT EXISTS idx_vet_specializations_spec_id ON vet_specializations(specialization_id);
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+
+-- Добавляем city_id к veterinarians для связи с городами
+ALTER TABLE veterinarians ADD COLUMN IF NOT EXISTS city_id INTEGER REFERENCES cities(id);
+
+-- Обновляем существующих врачей (привязываем к Москве для примера)
+UPDATE veterinarians SET city_id = 1 WHERE city_id IS NULL;
+
+-- Добавляем индексы для новых связей
+CREATE INDEX IF NOT EXISTS idx_veterinarians_city_id ON veterinarians(city_id);
