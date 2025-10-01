@@ -30,13 +30,13 @@ type Veterinarian struct {
 	FirstName       string            `json:"first_name"`
 	LastName        string            `json:"last_name"`
 	Phone           string            `json:"phone"`
-	Email           sql.NullString    `json:"email"`            // Может быть NULL
-	Description     sql.NullString    `json:"description"`      // Может быть NULL
-	ExperienceYears sql.NullInt64     `json:"experience_years"` // Может быть NULL
+	Email           sql.NullString    `json:"email"`
+	Description     sql.NullString    `json:"description"`
+	ExperienceYears sql.NullInt64     `json:"experience_years"`
 	IsActive        bool              `json:"is_active"`
-	CityID          sql.NullInt64     `json:"city_id"`         // Ссылка на город
-	Specializations []*Specialization `json:"specializations"` // Исправлено на указатели
+	CityID          sql.NullInt64     `json:"city_id"`
 	CreatedAt       time.Time         `json:"created_at"`
+	Specializations []*Specialization `json:"specializations,omitempty"`
 
 	// Для удобства - связанные данные
 	City      *City       `json:"city,omitempty"`

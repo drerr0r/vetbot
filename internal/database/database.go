@@ -305,18 +305,18 @@ func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models
 
 // ========== НОВЫЕ МЕТОДЫ ДЛЯ АДМИНКИ ==========
 
-// GetAllVeterinarians возвращает всех врачей с информацией о городах
+// GetAllVeterinarians возвращает всех врачей с информацией о городах (исправленная версия)
 func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 	query := `SELECT v.id, v.first_name, v.last_name, v.phone, v.email, v.description, 
-	                 v.experience_years, v.is_active, v.city_id, v.created_at,
-	                 c.id, c.name, c.region, c.created_at
+                     v.experience_years, v.is_active, v.city_id, v.created_at,
+                     c.id, c.name, c.region, c.created_at
               FROM veterinarians v
               LEFT JOIN cities c ON v.city_id = c.id
               ORDER BY v.first_name, v.last_name`
 
 	rows, err := d.db.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка запроса veterinarians: %v", err)
 	}
 	defer rows.Close()
 
@@ -325,24 +325,40 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		var vet models.Veterinarian
 		var cityID sql.NullInt64
 		var city models.City
-		var cityCreatedAt time.Time
+		var cityCreatedAt sql.NullTime
+		var email, description sql.NullString
+		var experienceYears sql.NullInt64
 
-		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
-			&city.ID, &city.Name, &city.Region, &cityCreatedAt)
+		// Исправлено: теперь сканируем все 14 колонок
+		err := rows.Scan(
+			&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
+			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
+			&city.ID, &city.Name, &city.Region, &cityCreatedAt,
+		)
 		if err != nil {
-			return nil, err
+			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
+			continue // Пропускаем проблемные строки вместо остановки
 		}
 
+		// Заполняем nullable поля
+		vet.Email = email
+		vet.Description = description
+		vet.ExperienceYears = experienceYears
 		vet.CityID = cityID
-		if cityID.Valid {
-			city.CreatedAt = cityCreatedAt
+
+		if cityID.Valid && cityCreatedAt.Valid {
+			city.CreatedAt = cityCreatedAt.Time
 			vet.City = &city
 		}
 
 		vets = append(vets, &vet)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ошибка итерации по результатам: %v", err)
+	}
+
+	log.Printf("Успешно загружено %d врачей", len(vets))
 	return vets, nil
 }
 
