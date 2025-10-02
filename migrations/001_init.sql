@@ -81,12 +81,14 @@ CREATE TABLE IF NOT EXISTS user_requests (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Условное создание constraints:
+-- Условное создание constraints с обработкой ошибок:
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_vet_identity') THEN
         ALTER TABLE veterinarians ADD CONSTRAINT unique_vet_identity UNIQUE (first_name, last_name, phone);
     END IF;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ 
@@ -94,6 +96,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_city_name') THEN
         ALTER TABLE cities ADD CONSTRAINT unique_city_name UNIQUE (name);
     END IF;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ 
@@ -101,6 +105,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_clinic_address') THEN
         ALTER TABLE clinics ADD CONSTRAINT unique_clinic_address UNIQUE (name, address);
     END IF;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ 
@@ -108,6 +114,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_specialization_name') THEN
         ALTER TABLE specializations ADD CONSTRAINT unique_specialization_name UNIQUE (name);
     END IF;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
 END $$;
 
 
@@ -169,9 +177,9 @@ INSERT INTO schedules (vet_id, clinic_id, day_of_week, start_time, end_time) VAL
 (1, 1, 5, '09:00', '15:00'),
 (2, 1, 2, '12:00', '18:00'),
 (2, 1, 4, '12:00', '18:00'),
-(3, 2, 1, '10:00', '16:00'),
-(3, 2, 3, '10:00', '16:00'),
-(3, 2, 5, '10:00', '16:00'),
+(3, 1, 1, '10:00', '16:00'),
+(3, 1, 3, '10:00', '16:00'),
+(3, 1, 5, '10:00', '16:00'),
 (1, 3, 2, '14:00', '20:00'),
 (2, 3, 5, '10:00', '16:00')
 ON CONFLICT DO NOTHING;
@@ -210,11 +218,6 @@ WHERE id NOT IN (
     GROUP BY name
 );
 
--- Добавляем уникальные ограничения для предотвращения будущих дублей
-ALTER TABLE veterinarians ADD CONSTRAINT IF NOT EXISTS unique_vet_identity UNIQUE (first_name, last_name, phone);
-ALTER TABLE cities ADD CONSTRAINT IF NOT EXISTS unique_city_name UNIQUE (name);
-ALTER TABLE clinics ADD CONSTRAINT IF NOT EXISTS unique_clinic_address UNIQUE (name, address);
-ALTER TABLE specializations ADD CONSTRAINT IF NOT EXISTS unique_specialization_name UNIQUE (name);
 
 -- Обновляем существующие INSERT запросы с ON CONFLICT
 INSERT INTO veterinarians (first_name, last_name, phone, email, experience_years, city_id) VALUES 
