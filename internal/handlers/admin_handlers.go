@@ -94,6 +94,8 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleMainMenu(update, text)
 	case "vet_management":
 		h.handleVetManagement(update, text)
+	case "vet_search_city":
+		h.handleVetSearchCity(update, text)
 	case "clinic_management":
 		h.handleClinicManagement(update, text)
 	case "city_management":
@@ -114,7 +116,7 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleVetEditField(update, text)
 	case "vet_edit_specializations":
 		h.handleVetEditSpecializations(update, text)
-	case "vet_edit_city": // ← ТОЛЬКО ОДИН РАЗ
+	case "vet_edit_city": // !!!
 		h.handleVetEditCity(update, text)
 	case "vet_confirm_delete":
 		h.handleVetConfirmDelete(update, text)
@@ -144,8 +146,6 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleCityEditRegion(update, text)
 	case "city_confirm_delete":
 		h.handleCityConfirmDelete(update, text)
-	case "vet_search_city":
-		h.handleVetSearchCity(update, text)
 	case "city_search_region": // ← ТОЛЬКО ОДИН РАЗ
 		h.handleCitySearchRegion(update, text) // Исправлено: вызываем handleCitySearchRegion вместо startSearchByRegion
 	default:
@@ -160,6 +160,7 @@ func (h *AdminHandlers) handleBackButton(update tgbotapi.Update) {
 
 	// Определяем текущее состояние и возвращаемся на уровень выше
 	switch currentState {
+
 	case "vet_management", "clinic_management", "city_management", "import_menu":
 		h.adminState[userID] = "main_menu"
 		h.HandleAdmin(update)
@@ -340,6 +341,9 @@ func (h *AdminHandlers) handleVetManagement(update tgbotapi.Update, text string)
 
 // handleVetSearchByCity обрабатывает поиск врачей по городу
 func (h *AdminHandlers) handleVetSearchByCity(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "vet_search_city" // Устанавливаем состояние
+
 	cities, err := h.db.GetAllCities()
 	if err != nil {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка городов")
@@ -371,6 +375,10 @@ func (h *AdminHandlers) handleVetSearchByCity(update tgbotapi.Update) {
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
+
+	// Сохраняем список городов во временные данные
+	userIDStr := strconv.FormatInt(userID, 10)
+	h.tempData[userIDStr+"_cities"] = cities
 
 	h.bot.Send(msg)
 }
@@ -2241,7 +2249,72 @@ func (h *AdminHandlers) handleVetSearchCity(update tgbotapi.Update, text string)
 	}
 
 	selectedCity := cities[cityNum-1]
-	h.showVetsInCity(update, selectedCity)
+
+	// Ищем врачей в выбранном городе
+	criteria := &models.SearchCriteria{
+		CityID: selectedCity.ID,
+	}
+
+	vets, err := h.db.FindVetsByCity(criteria)
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("❌ Ошибка при поиске врачей в городе %s", selectedCity.Name))
+		h.bot.Send(msg)
+		return
+	}
+
+	if len(vets) == 0 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			fmt.Sprintf("📭 В городе *%s* не найдено врачей", selectedCity.Name))
+		msg.ParseMode = "Markdown"
+		h.bot.Send(msg)
+		return
+	}
+
+	// Формируем список врачей
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("👥 *Врачи в городе %s:*\n\n", selectedCity.Name))
+
+	for i, vet := range vets {
+		status := "✅"
+		if !vet.IsActive {
+			status = "❌"
+		}
+		sb.WriteString(fmt.Sprintf("%s %d. %s %s\n", status, i+1, vet.FirstName, vet.LastName))
+		sb.WriteString(fmt.Sprintf("   📞 %s\n", vet.Phone))
+
+		// Специализации
+		if len(vet.Specializations) > 0 {
+			var specNames []string
+			for _, spec := range vet.Specializations {
+				specNames = append(specNames, spec.Name)
+			}
+			sb.WriteString(fmt.Sprintf("   🎯 %s\n", strings.Join(specNames, ", ")))
+		}
+
+		if vet.ExperienceYears.Valid {
+			sb.WriteString(fmt.Sprintf("   💼 Опыт: %d лет\n", vet.ExperienceYears.Int64))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Очищаем временные данные
+	delete(h.tempData, userIDStr+"_cities")
+
+	// Возвращаем в меню управления врачами
+	h.adminState[userID] = "vet_management"
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	h.bot.Send(msg)
 }
 
 // showVetsInCity показывает врачей в выбранном городе
