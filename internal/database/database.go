@@ -716,6 +716,20 @@ func (d *Database) UpdateVeterinarian(vet *models.Veterinarian) error {
 
 // CreateVeterinarian создает нового врача
 func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
+	// Сначала проверяем, нет ли уже врача с таким именем и телефоном
+	var existingID int
+	err := d.db.QueryRow(
+		"SELECT id FROM veterinarians WHERE first_name = $1 AND last_name = $2 AND phone = $3",
+		vet.FirstName, vet.LastName, vet.Phone,
+	).Scan(&existingID)
+
+	if err == nil {
+		return fmt.Errorf("врач с такими данными уже существует (ID: %d)", existingID)
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
 	query := `INSERT INTO veterinarians 
         (first_name, last_name, phone, email, description, experience_years, is_active, city_id) 
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
@@ -725,29 +739,6 @@ func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
 		vet.FirstName, vet.LastName, vet.Phone, vet.Email,
 		vet.Description, vet.ExperienceYears, vet.IsActive, vet.CityID,
 	).Scan(&vet.ID, &vet.CreatedAt)
-}
-
-func (d *Database) SearchCitiesByRegion(region string) ([]*models.City, error) {
-	query := `SELECT id, name, region, created_at FROM cities 
-              WHERE region ILIKE $1 ORDER BY name`
-
-	rows, err := d.db.Query(query, "%"+region+"%") // Исправлено с db.DB на d.db
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cities []*models.City
-	for rows.Next() {
-		var city models.City
-		err := rows.Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
-		if err != nil {
-			return nil, err
-		}
-		cities = append(cities, &city)
-	}
-
-	return cities, nil
 }
 
 // DeleteCity удаляет город по ID
@@ -834,4 +825,28 @@ func (d *Database) AddVeterinarianSpecialization(vetID int, specID int) error {
 	query := `INSERT INTO vet_specializations (vet_id, specialization_id) VALUES ($1, $2)`
 	_, err := d.db.Exec(query, vetID, specID)
 	return err
+}
+
+// SearchCitiesByRegion ищет города по региону
+func (d *Database) SearchCitiesByRegion(region string) ([]*models.City, error) {
+	query := `SELECT id, name, region, created_at FROM cities 
+              WHERE region ILIKE $1 ORDER BY name`
+
+	rows, err := d.db.Query(query, "%"+region+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cities []*models.City
+	for rows.Next() {
+		var city models.City
+		err := rows.Scan(&city.ID, &city.Name, &city.Region, &city.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		cities = append(cities, &city)
+	}
+
+	return cities, nil
 }

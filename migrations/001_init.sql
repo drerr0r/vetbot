@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Таблица запросов пользователей (вместо consultations)
+-- Таблица запросов пользователей 
 CREATE TABLE IF NOT EXISTS user_requests (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -80,6 +80,20 @@ CREATE TABLE IF NOT EXISTS user_requests (
     search_query TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+
+
+-- Уникальное ограничение для предотвращения дублей врачей
+ALTER TABLE veterinarians ADD CONSTRAINT unique_vet_identity UNIQUE (first_name, last_name, phone);
+
+-- Для городов 
+ALTER TABLE cities ADD CONSTRAINT unique_city_name UNIQUE (name);
+
+-- Для клиник
+ALTER TABLE clinics ADD CONSTRAINT unique_clinic_address UNIQUE (name, address);
+
+-- Для специализаций  
+ALTER TABLE specializations ADD CONSTRAINT unique_specialization_name UNIQUE (name);
 
 -- Вставляем основные города
 INSERT INTO cities (name, region) VALUES 
@@ -111,7 +125,7 @@ INSERT INTO veterinarians (first_name, last_name, phone, email, experience_years
 ('Иван', 'Петров', '+79161234567', 'ivan.petrov@vetclinic.ru', 10, 1),
 ('Мария', 'Сидорова', '+79167654321', 'maria.sidorova@vetclinic.ru', 8, 1),
 ('Алексей', 'Кузнецов', '+79169998877', 'alexey.kuznetsov@vetclinic.ru', 12, 1)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (first_name, last_name, phone) DO NOTHING;
 
 -- Вставляем клиники
 INSERT INTO clinics (name, address, phone, working_hours, city_id, district, metro_station) VALUES 
@@ -161,3 +175,41 @@ CREATE INDEX IF NOT EXISTS idx_schedules_is_available ON schedules(is_available)
 CREATE INDEX IF NOT EXISTS idx_vet_specializations_vet_id ON vet_specializations(vet_id);
 CREATE INDEX IF NOT EXISTS idx_vet_specializations_spec_id ON vet_specializations(specialization_id);
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+
+-- ========== ОЧИСТКА ДУБЛИКАТОВ И ДОБАВЛЕНИЕ ОГРАНИЧЕНИЙ ==========
+
+-- Удаляем дубликаты врачей, оставляя только первую запись
+DELETE FROM veterinarians 
+WHERE id NOT IN (
+    SELECT MIN(id) 
+    FROM veterinarians 
+    GROUP BY first_name, last_name, phone
+);
+
+-- Удаляем дубликаты городов
+DELETE FROM cities 
+WHERE id NOT IN (
+    SELECT MIN(id) 
+    FROM cities 
+    GROUP BY name
+);
+
+-- Добавляем уникальные ограничения для предотвращения будущих дублей
+ALTER TABLE veterinarians ADD CONSTRAINT IF NOT EXISTS unique_vet_identity UNIQUE (first_name, last_name, phone);
+ALTER TABLE cities ADD CONSTRAINT IF NOT EXISTS unique_city_name UNIQUE (name);
+ALTER TABLE clinics ADD CONSTRAINT IF NOT EXISTS unique_clinic_address UNIQUE (name, address);
+ALTER TABLE specializations ADD CONSTRAINT IF NOT EXISTS unique_specialization_name UNIQUE (name);
+
+-- Обновляем существующие INSERT запросы с ON CONFLICT
+INSERT INTO veterinarians (first_name, last_name, phone, email, experience_years, city_id) VALUES 
+('Иван', 'Петров', '+79161234567', 'ivan.petrov@vetclinic.ru', 10, 1),
+('Мария', 'Сидорова', '+79167654321', 'maria.sidorova@vetclinic.ru', 8, 1),
+('Алексей', 'Кузнецов', '+79169998877', 'alexey.kuznetsov@vetclinic.ru', 12, 1)
+ON CONFLICT (first_name, last_name, phone) DO NOTHING;
+
+-- Аналогично обновите другие INSERT запросы...
+INSERT INTO cities (name, region) VALUES 
+('Москва', 'Центральный федеральный округ'),
+('Санкт-Петербург', 'Северо-Западный федеральный округ')
+-- ... остальные города
+ON CONFLICT (name) DO NOTHING;
