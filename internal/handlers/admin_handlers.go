@@ -89,6 +89,12 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		return
 	}
 
+	// Проверяем кнопку "Отмена" для процессов добавления
+	if text == "❌ Отмена" {
+		h.handleCancelProcess(update, state)
+		return
+	}
+
 	switch state {
 	case "main_menu":
 		h.handleMainMenu(update, text)
@@ -151,6 +157,33 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 	default:
 		h.handleMainMenu(update, text)
 	}
+}
+
+// handleCancelProcess обрабатывает отмену различных процессов
+func (h *AdminHandlers) handleCancelProcess(update tgbotapi.Update, state string) {
+	userID := update.Message.From.ID
+
+	// Очищаем временные данные
+	h.cleanTempData(userID)
+
+	// Определяем куда вернуться в зависимости от состояния
+	switch {
+	case strings.HasPrefix(state, "add_vet"), strings.HasPrefix(state, "vet_edit"):
+		h.adminState[userID] = "vet_management"
+		h.showVetManagement(update)
+	case strings.HasPrefix(state, "add_city"), strings.HasPrefix(state, "city_edit"):
+		h.adminState[userID] = "city_management"
+		h.showCityManagement(update)
+	case strings.HasPrefix(state, "add_clinic"), strings.HasPrefix(state, "clinic_edit"):
+		h.adminState[userID] = "clinic_management"
+		h.showClinicManagement(update)
+	default:
+		h.adminState[userID] = "main_menu"
+		h.HandleAdmin(update)
+	}
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Операция отменена")
+	h.bot.Send(msg)
 }
 
 // handleBackButton обрабатывает кнопку "Назад"
@@ -459,17 +492,29 @@ func (h *AdminHandlers) startAddVet(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 	h.adminState[userID] = "add_vet_name"
 
-	removeKeyboard := tgbotapi.NewRemoveKeyboard(true)
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("❌ Отмена"),
+		),
+	)
+	keyboard.OneTimeKeyboard = true
+
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		"👨‍⚕️ *Добавление нового врача*\n\nВведите имя врача:")
 	msg.ParseMode = "Markdown"
-	msg.ReplyMarkup = removeKeyboard
+	msg.ReplyMarkup = keyboard
 
 	h.bot.Send(msg)
 }
 
 // handleAddVetName обрабатывает ввод имени врача
 func (h *AdminHandlers) handleAddVetName(update tgbotapi.Update, name string) {
+	// Проверяем кнопку "Отмена"
+	if name == "❌ Отмена" {
+		h.handleCancelAddVet(update)
+		return
+	}
+
 	userID := update.Message.From.ID
 	h.adminState[userID] = "add_vet_phone"
 
@@ -477,15 +522,28 @@ func (h *AdminHandlers) handleAddVetName(update tgbotapi.Update, name string) {
 	userIDStr := strconv.FormatInt(userID, 10)
 	h.tempData[userIDStr+"_name"] = name
 
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("❌ Отмена"),
+		),
+	)
+
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		"📞 Теперь введите телефон врача:")
 	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
 
 	h.bot.Send(msg)
 }
 
 // handleAddVetPhone обрабатывает ввод телефона врача
 func (h *AdminHandlers) handleAddVetPhone(update tgbotapi.Update, phone string) {
+	// Проверяем кнопку "Отмена"
+	if phone == "❌ Отмена" {
+		h.handleCancelAddVet(update)
+		return
+	}
+
 	userID := update.Message.From.ID
 	h.adminState[userID] = "add_vet_specializations"
 
@@ -516,8 +574,31 @@ func (h *AdminHandlers) handleAddVetPhone(update tgbotapi.Update, phone string) 
 
 	sb.WriteString("\nПример: 1,3,5")
 
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("❌ Отмена"),
+		),
+	)
+
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, sb.String())
+	msg.ReplyMarkup = keyboard
 	h.bot.Send(msg)
+}
+
+// handleCancelAddVet обрабатывает отмену добавления врача
+func (h *AdminHandlers) handleCancelAddVet(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+
+	// Очищаем временные данные
+	h.cleanTempData(userID)
+
+	// Возвращаем в меню управления врачами
+	h.adminState[userID] = "vet_management"
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Добавление врача отменено")
+	h.bot.Send(msg)
+
+	h.showVetManagement(update)
 }
 
 // handleAddVetSpecializations обрабатывает ввод специализаций
@@ -590,19 +671,29 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 
 	InfoLog.Printf("✅ Получено %d врачей из базы данных", len(vets))
 
-	if len(vets) == 0 {
-		InfoLog.Printf("📭 В базе данных нет врачей")
+	// ФИЛЬТРАЦИЯ: убираем врачей с NULL или пустыми именами
+	var validVets []*models.Veterinarian
+	for _, vet := range vets {
+		if vet.FirstName != "" && vet.LastName != "" {
+			validVets = append(validVets, vet)
+		}
+	}
+
+	InfoLog.Printf("📋 После фильтрации осталось %d валидных врачей", len(validVets))
+
+	if len(validVets) == 0 {
+		InfoLog.Printf("📭 В базе данных нет валидных врачей")
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "📭 Врачи не найдены")
 		h.bot.Send(msg)
 		return
 	}
 
-	InfoLog.Printf("📋 Формируем список из %d врачей для отображения", len(vets))
+	InfoLog.Printf("📋 Формируем список из %d врачей для отображения", len(validVets))
 
 	var sb strings.Builder
 	sb.WriteString("👥 *Список врачей:*\n\n")
 
-	for i, vet := range vets {
+	for i, vet := range validVets {
 		status := "✅"
 		if !vet.IsActive {
 			status = "❌"
