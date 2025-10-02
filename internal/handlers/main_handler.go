@@ -338,14 +338,14 @@ func (h *MainHandler) importVeterinarians(filePath string, fileName string) (str
 
 		// Сохраняем специализации
 		for _, spec := range vet.Specializations {
-			err := h.db.AddVeterinarianSpecialization(vet.ID, spec.ID)
+			err := h.db.AddVeterinarianSpecialization(models.GetVetIDAsIntOrZero(&vet), spec.ID)
 			if err != nil {
-				ErrorLog.Printf("Ошибка добавления специализации для врача %d: %v", vet.ID, err)
+				InfoLog.Printf("Processing vet ID: %d", models.GetVetIDAsIntOrZero(&vet))
 			}
 		}
 
 		successCount++
-		InfoLog.Printf("Успешно импортирован ветеринар: %s %s (ID: %d)", vet.FirstName, vet.LastName, vet.ID)
+		InfoLog.Printf("Processing vet ID: %d", models.GetVetIDAsIntOrZero(&vet))
 	}
 
 	result := fmt.Sprintf("✅ Импорт завершен!\n\nОбработано записей: %d\nУспешно импортировано: %d\nОшибок: %d",

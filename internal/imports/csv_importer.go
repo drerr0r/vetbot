@@ -184,7 +184,7 @@ func (i *CSVImporter) ImportVeterinarians(file io.Reader, filename string, InfoL
 			ErrorLog.Printf("❌ Строка %d: ошибка сохранения врача: %v", idx+1, err)
 		} else {
 			result.SuccessCount++
-			InfoLog.Printf("✅ Строка %d: врач %s %s успешно добавлен (ID: %d)", idx+1, vet.FirstName, vet.LastName, vet.ID)
+			InfoLog.Printf("✅ Строка %d: врач %s %s успешно добавлен (ID: %d)", idx+1, vet.FirstName, vet.LastName, models.GetVetIDAsIntOrZero(vet))
 		}
 	}
 
@@ -213,7 +213,7 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 		return fmt.Errorf("ошибка добавления врача: %w", err)
 	}
 
-	InfoLog.Printf("👨‍⚕️ Строка %d: врач добавлен в БД с ID: %d", rowNum, vet.ID)
+	InfoLog.Printf("👨‍⚕️ Строка %d: врач добавлен в БД с ID: %d", rowNum, models.GetVetIDAsIntOrZero(vet))
 
 	// Обрабатываем специализации (колонка 7)
 	if len(record) > 7 && record[7] != "" {
@@ -272,7 +272,7 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 			InfoLog.Printf("🏥 Строка %d: обработка клиники '%s' (ID: %d)", rowNum, clinicName, clinicID)
 
 			// Парсим расписание
-			schedules := i.parseSchedule(scheduleStr, vet.ID, clinicID)
+			schedules := i.parseSchedule(scheduleStr, models.GetVetIDAsIntOrZero(vet), clinicID)
 			for _, schedule := range schedules {
 				_, err = tx.Exec(
 					`INSERT INTO schedules (vet_id, clinic_id, day_of_week, start_time, end_time, is_available) 

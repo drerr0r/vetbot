@@ -593,7 +593,7 @@ func (h *VetHandlers) sendVetWithDetailsButton(chatID int64, vet *models.Veterin
 	// Создаем клавиатуру с кнопкой "Подробнее"
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_%d", vet.ID)),
+			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_%d", models.GetVetIDAsIntOrZero(vet))),
 		),
 	)
 
@@ -693,7 +693,7 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 		}
 
 		// Специализации врача
-		specs, err := h.db.GetSpecializationsByVetID(vet.ID)
+		specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
 		if err == nil && len(specs) > 0 {
 			sb.WriteString("🎯 *Специализации:* ")
 			specNames := make([]string, len(specs))
@@ -999,7 +999,7 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 		// Расписание для выбранного дня
 		// Расписание для выбранного дня
-		schedules, err := h.db.GetSchedulesByVetID(vet.ID)
+		schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
 		if err == nil {
 			for _, schedule := range schedules {
 				if schedule.DayOfWeek == day || day == 0 {

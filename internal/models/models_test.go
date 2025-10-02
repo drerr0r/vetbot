@@ -88,7 +88,7 @@ func TestSpecialization_JSONSerialization(t *testing.T) {
 
 func TestVeterinarian_JSONSerialization(t *testing.T) {
 	vet := Veterinarian{
-		ID:              1,
+		ID:              sql.NullInt64{Int64: 1, Valid: true},
 		FirstName:       "Анна",
 		LastName:        "Смирнова",
 		Phone:           "+79123456789",
@@ -260,7 +260,7 @@ func TestSchedule_JSONSerialization(t *testing.T) {
 		EndTime:     "18:00",
 		IsAvailable: true,
 		Vet: &Veterinarian{
-			ID:        1,
+			ID:        sql.NullInt64{Int64: 1, Valid: true},
 			FirstName: "Анна",
 			LastName:  "Смирнова",
 		},

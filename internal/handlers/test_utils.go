@@ -178,7 +178,7 @@ func (m *MockDatabase) FindAvailableVets(criteria *models.SearchCriteria) ([]*mo
 		if criteria.DayOfWeek > 0 {
 			hasSchedule := false
 			for _, schedule := range m.Schedules {
-				if schedule.VetID == vet.ID && schedule.DayOfWeek == criteria.DayOfWeek {
+				if schedule.VetID == models.GetVetIDAsIntOrZero(vet) && schedule.DayOfWeek == criteria.DayOfWeek {
 					hasSchedule = true
 					break
 				}
@@ -192,7 +192,7 @@ func (m *MockDatabase) FindAvailableVets(criteria *models.SearchCriteria) ([]*mo
 		if criteria.ClinicID > 0 {
 			hasClinic := false
 			for _, schedule := range m.Schedules {
-				if schedule.VetID == vet.ID && schedule.ClinicID == criteria.ClinicID {
+				if schedule.VetID == models.GetVetIDAsIntOrZero(vet) && schedule.ClinicID == criteria.ClinicID {
 					hasClinic = true
 					break
 				}
@@ -206,7 +206,7 @@ func (m *MockDatabase) FindAvailableVets(criteria *models.SearchCriteria) ([]*mo
 		if criteria.CityID > 0 {
 			hasCity := false
 			for _, schedule := range m.Schedules {
-				if schedule.VetID == vet.ID {
+				if schedule.VetID == models.GetVetIDAsIntOrZero(vet) {
 					// Здесь должна быть логика проверки города через клинику
 					// Для упрощения считаем, что все врачи работают в указанном городе
 					hasCity = true
@@ -402,7 +402,7 @@ func containsIgnoreCase(s, substr string) bool {
 // AddTestVeterinarian добавляет тестового ветеринара
 func (m *MockDatabase) AddTestVeterinarian(id int, firstName, lastName, phone string) {
 	m.Veterinarians[id] = &models.Veterinarian{
-		ID:              id,
+		ID:              sql.NullInt64{Int64: int64(id), Valid: true},
 		FirstName:       firstName,
 		LastName:        lastName,
 		Phone:           phone,
@@ -643,8 +643,8 @@ func (m *MockDatabase) CreateVeterinarian(vet *models.Veterinarian) error {
 	}
 
 	// Генерируем ID если не установлен
-	if vet.ID == 0 {
-		vet.ID = len(m.Veterinarians) + 1
+	if !vet.ID.Valid || vet.ID.Int64 == 0 {
+		vet.ID = sql.NullInt64{Int64: int64(len(m.Veterinarians) + 1), Valid: true}
 	}
 
 	// Устанавливаем время создания если не установлено
@@ -654,7 +654,7 @@ func (m *MockDatabase) CreateVeterinarian(vet *models.Veterinarian) error {
 
 	// Создаем копию ветеринара, чтобы избежать изменений исходного объекта
 	newVet := *vet
-	m.Veterinarians[newVet.ID] = &newVet
+	m.Veterinarians[models.GetVetIDAsIntOrZero(&newVet)] = &newVet
 
 	return nil
 }
@@ -665,11 +665,12 @@ func (m *MockDatabase) UpdateVeterinarian(vet *models.Veterinarian) error {
 		return m.VeterinariansError
 	}
 
-	if _, exists := m.Veterinarians[vet.ID]; !exists {
+	// Проверяем существование ветеринара
+	if _, exists := m.Veterinarians[models.GetVetIDAsIntOrZero(vet)]; !exists {
 		return sql.ErrNoRows
 	}
 
-	m.Veterinarians[vet.ID] = vet
+	m.Veterinarians[models.GetVetIDAsIntOrZero(vet)] = vet
 	return nil
 }
 
@@ -735,13 +736,13 @@ func (m *MockDatabase) GetVeterinarianWithDetails(id int) (*models.Veterinarian,
 	vetWithDetails := *vet
 
 	// Загружаем специализации
-	specs, err := m.GetSpecializationsByVetID(vet.ID)
+	specs, err := m.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
 	if err == nil {
 		vetWithDetails.Specializations = specs
 	}
 
 	// Загружаем расписание
-	schedules, err := m.GetSchedulesByVetID(vet.ID)
+	schedules, err := m.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
 	if err == nil {
 		vetWithDetails.Schedules = schedules
 	}

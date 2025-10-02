@@ -661,11 +661,11 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 	// Сохраняем ID врача во временные данные
 	userIDStr := strconv.FormatInt(userID, 10)
 	h.tempData[userIDStr+"_vet_edit"] = &models.VetEditData{
-		VetID: vet.ID,
+		VetID: models.GetVetIDAsIntOrZero(vet),
 	}
 
 	// Получаем специализации врача
-	specs, err := h.db.GetSpecializationsByVetID(vet.ID)
+	specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
 	specsText := ""
 	if err == nil && len(specs) > 0 {
 		var specIDs []string
@@ -784,7 +784,7 @@ func (h *AdminHandlers) handleVetEditMenu(update tgbotapi.Update, text string) {
 
 	case "🎯 Редактировать специализации":
 		h.adminState[userID] = "vet_edit_specializations"
-		specs, err := h.db.GetSpecializationsByVetID(vet.ID)
+		specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
 		if err == nil && len(specs) > 0 {
 			var specIDs []string
 			for _, spec := range specs {
@@ -1497,7 +1497,7 @@ func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText stri
 	// Обрабатываем специализации
 	if specsText != "" {
 		specIDs := strings.Split(specsText, ",")
-		InfoLog.Printf("Adding vet ID %d with specializations: %v", vet.ID, specIDs)
+		InfoLog.Printf("Adding vet ID %d with specializations: %v", models.GetVetIDAsIntOrZero(vet), specIDs)
 
 		for _, specIDStr := range specIDs {
 			specID, err := strconv.Atoi(strings.TrimSpace(specIDStr))
@@ -1518,7 +1518,7 @@ func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText stri
 					if err != nil {
 						ErrorLog.Printf("Error adding specialization %d: %v", specID, err)
 					} else {
-						InfoLog.Printf("Successfully added specialization %d for vet %d", specID, vet.ID)
+						InfoLog.Printf("Adding vet ID %d with specializations: %v", models.GetVetIDAsIntOrZero(vet), specIDs)
 					}
 				} else {
 					InfoLog.Printf("Specialization %d does not exist", specID)
@@ -2603,7 +2603,7 @@ func (h *AdminHandlers) startChangeVetCity(update tgbotapi.Update, vet *models.V
 	userIDStr := strconv.FormatInt(userID, 10)
 	h.tempData[userIDStr+"_cities"] = cities
 	h.tempData[userIDStr+"_vet_edit"] = &models.VetEditData{
-		VetID: vet.ID, // СОХРАНЯЕМ ID ВРАЧА
+		VetID: models.GetVetIDAsIntOrZero(vet),
 	}
 
 	h.bot.Send(msg)

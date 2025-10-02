@@ -189,7 +189,7 @@ func TestVetHandleSearchBySpecialization(t *testing.T) {
 
 		// Создаем ветеринара
 		vet := &models.Veterinarian{
-			ID:              1,
+			ID:              sql.NullInt64{Int64: 1, Valid: true},
 			FirstName:       "Иван",
 			LastName:        "Петров",
 			Phone:           "+79123456789",
@@ -341,7 +341,7 @@ func TestVetHandleSearchByClinic(t *testing.T) {
 
 		// Создаем ветеринара
 		vet := &models.Veterinarian{
-			ID:              1,
+			ID:              sql.NullInt64{Int64: 1, Valid: true},
 			FirstName:       "Мария",
 			LastName:        "Иванова",
 			Phone:           "+79123456780",
@@ -474,7 +474,7 @@ func TestVetHandleCallback(t *testing.T) {
 		mockDB.Specializations[1] = spec
 
 		vet := &models.Veterinarian{
-			ID:              1,
+			ID:              sql.NullInt64{Int64: 1, Valid: true},
 			FirstName:       "Иван",
 			LastName:        "Петров",
 			Phone:           "+79123456789",
@@ -619,7 +619,7 @@ func TestVetMessageFormatting(t *testing.T) {
 
 		// Создаем ветеринара с полной информацией
 		vet := &models.Veterinarian{
-			ID:              1,
+			ID:              sql.NullInt64{Int64: 1, Valid: true},
 			FirstName:       "Дмитрий",
 			LastName:        "Сидоров",
 			Phone:           "+79123456789",
@@ -689,7 +689,7 @@ func TestVetIntegrationScenarios(t *testing.T) {
 		mockDB.Clinics[1] = clinic
 
 		vet := &models.Veterinarian{
-			ID:              1,
+			ID:              sql.NullInt64{Int64: 1, Valid: true},
 			FirstName:       "Анна",
 			LastName:        "Смирнова",
 			Phone:           "+79123456789",
@@ -746,7 +746,7 @@ func TestVetHandleDaySelection(t *testing.T) {
 
 		// Создаем ветеринара
 		vet := &models.Veterinarian{
-			ID:        1,
+			ID:        sql.NullInt64{Int64: 1, Valid: true},
 			FirstName: "Сергей",
 			LastName:  "Кузнецов",
 			Phone:     "+79123456789",
@@ -790,7 +790,7 @@ func TestVetHandleDaySelection(t *testing.T) {
 
 		// Врач есть, но не работает в выбранный день
 		vet := &models.Veterinarian{
-			ID:        1,
+			ID:        sql.NullInt64{Int64: 1, Valid: true},
 			FirstName: "Сергей",
 			LastName:  "Кузнецов",
 			Phone:     "+79123456789",

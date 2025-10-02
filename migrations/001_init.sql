@@ -81,19 +81,35 @@ CREATE TABLE IF NOT EXISTS user_requests (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Условное создание constraints:
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_vet_identity') THEN
+        ALTER TABLE veterinarians ADD CONSTRAINT unique_vet_identity UNIQUE (first_name, last_name, phone);
+    END IF;
+END $$;
 
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_city_name') THEN
+        ALTER TABLE cities ADD CONSTRAINT unique_city_name UNIQUE (name);
+    END IF;
+END $$;
 
--- Уникальное ограничение для предотвращения дублей врачей
-ALTER TABLE veterinarians ADD CONSTRAINT unique_vet_identity UNIQUE (first_name, last_name, phone);
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_clinic_address') THEN
+        ALTER TABLE clinics ADD CONSTRAINT unique_clinic_address UNIQUE (name, address);
+    END IF;
+END $$;
 
--- Для городов 
-ALTER TABLE cities ADD CONSTRAINT unique_city_name UNIQUE (name);
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_specialization_name') THEN
+        ALTER TABLE specializations ADD CONSTRAINT unique_specialization_name UNIQUE (name);
+    END IF;
+END $$;
 
--- Для клиник
-ALTER TABLE clinics ADD CONSTRAINT unique_clinic_address UNIQUE (name, address);
-
--- Для специализаций  
-ALTER TABLE specializations ADD CONSTRAINT unique_specialization_name UNIQUE (name);
 
 -- Вставляем основные города
 INSERT INTO cities (name, region) VALUES 
@@ -213,3 +229,19 @@ INSERT INTO cities (name, region) VALUES
 ('Санкт-Петербург', 'Северо-Западный федеральный округ')
 -- ... остальные города
 ON CONFLICT (name) DO NOTHING;
+
+
+-- Очистите записи с NULL ID
+DELETE FROM veterinarians WHERE id IS NULL;
+
+-- Проверьте и очистите дубликаты клиник
+DELETE FROM clinics 
+WHERE id NOT IN (
+    SELECT MIN(id) 
+    FROM clinics 
+    GROUP BY name, address
+);
+
+-- Убедитесь, что все clinic_id в schedules существуют
+DELETE FROM schedules 
+WHERE clinic_id NOT IN (SELECT id FROM clinics);

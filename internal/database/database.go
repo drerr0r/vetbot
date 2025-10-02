@@ -124,7 +124,7 @@ func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*mo
 		}
 
 		// Загружаем специализации для каждого врача
-		specs, err := d.GetSpecializationsByVetID(vet.ID)
+		specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
 		if err == nil {
 			vet.Specializations = specs
 		}
@@ -292,7 +292,7 @@ func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models
 		}
 
 		// Загружаем специализации для каждого врача
-		specs, err := d.GetSpecializationsByVetID(vet.ID)
+		specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
 		if err == nil {
 			vet.Specializations = specs
 		}
@@ -305,7 +305,7 @@ func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models
 
 // ========== НОВЫЕ МЕТОДЫ ДЛЯ АДМИНКИ ==========
 
-// GetAllVeterinarians возвращает всех врачей с информацией о городах (исправленная версия)
+// GetAllVeterinarians возвращает всех врачей с информацией о городах
 func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 	query := `SELECT v.id, v.first_name, v.last_name, v.phone, v.email, v.description, 
                      v.experience_years, v.is_active, v.city_id, v.created_at,
@@ -328,19 +328,20 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		var cityCreatedAt sql.NullTime
 		var email, description sql.NullString
 		var experienceYears sql.NullInt64
+		var vetID sql.NullInt64
 
-		// Исправлено: теперь сканируем все 14 колонок
 		err := rows.Scan(
-			&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
+			&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
 			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
 			&city.ID, &city.Name, &city.Region, &cityCreatedAt,
 		)
 		if err != nil {
 			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
-			continue // Пропускаем проблемные строки вместо остановки
+			continue
 		}
 
 		// Заполняем nullable поля
+		vet.ID = vetID
 		vet.Email = email
 		vet.Description = description
 		vet.ExperienceYears = experienceYears
@@ -349,6 +350,14 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		if cityID.Valid && cityCreatedAt.Valid {
 			city.CreatedAt = cityCreatedAt.Time
 			vet.City = &city
+		}
+
+		// Загружаем специализации только для валидных ID
+		if vetID.Valid {
+			specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
+			if err == nil {
+				vet.Specializations = specs
+			}
 		}
 
 		vets = append(vets, &vet)
@@ -369,6 +378,7 @@ func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
 
 	var vet models.Veterinarian
 	var cityID sql.NullInt64
+	var vetID sql.NullInt64
 
 	err := d.db.QueryRow(query, id).Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone,
 		&vet.Email, &vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt)
@@ -376,6 +386,7 @@ func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
 		return nil, err
 	}
 
+	vet.ID = vetID
 	vet.CityID = cityID
 
 	// Загружаем информацию о городе если есть
@@ -647,7 +658,7 @@ func (d *Database) FindVetsByCity(criteria *models.SearchCriteria) ([]*models.Ve
 		}
 
 		// Загружаем специализации для каждого врача
-		specs, err := d.GetSpecializationsByVetID(vet.ID)
+		specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
 		if err == nil {
 			vet.Specializations = specs
 		}
@@ -770,9 +781,10 @@ func (d *Database) GetVeterinarianWithDetails(id int) (*models.Veterinarian, err
 	var cityID sql.NullInt64
 	var city models.City
 	var cityCreatedAt time.Time
+	var vetID sql.NullInt64
 
 	err := d.db.QueryRow(query, id).Scan(
-		&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+		&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
 		&vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
 		&city.ID, &city.Name, &city.Region, &cityCreatedAt,
 	)
@@ -780,6 +792,7 @@ func (d *Database) GetVeterinarianWithDetails(id int) (*models.Veterinarian, err
 		return nil, err
 	}
 
+	vet.ID = vetID
 	vet.CityID = cityID
 	if cityID.Valid {
 		city.CreatedAt = cityCreatedAt
@@ -787,18 +800,16 @@ func (d *Database) GetVeterinarianWithDetails(id int) (*models.Veterinarian, err
 	}
 
 	// Загружаем специализации
-	specs, err := d.GetSpecializationsByVetID(vet.ID)
+	specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
 	if err == nil {
 		vet.Specializations = specs
 	}
 
 	// Загружаем расписание и клиники
-	schedules, err := d.GetSchedulesByVetID(vet.ID)
+	schedules, err := d.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(&vet))
 	if err == nil {
-		// Можно добавить информацию о клиниках из расписания если нужно
 		vet.Schedules = schedules
 	}
-
 	return &vet, nil
 }
 

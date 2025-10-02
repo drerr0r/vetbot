@@ -26,7 +26,7 @@ type Specialization struct {
 
 // Veterinarian представляет ветеринарного врача
 type Veterinarian struct {
-	ID              int               `json:"id"`
+	ID              sql.NullInt64     `json:"id"`
 	FirstName       string            `json:"first_name"`
 	LastName        string            `json:"last_name"`
 	Phone           string            `json:"phone"`
@@ -147,4 +147,20 @@ type CityEditData struct {
 	CityID       int
 	Field        string
 	CurrentValue string
+}
+
+// GetVetIDAsInt безопасно конвертирует vet.ID в int
+func GetVetIDAsInt(vet *Veterinarian) (int, bool) {
+	if !vet.ID.Valid {
+		return 0, false
+	}
+	return int(vet.ID.Int64), true
+}
+
+// GetVetIDAsIntOrZero возвращает ID как int или 0 если невалиден
+func GetVetIDAsIntOrZero(vet *Veterinarian) int {
+	if !vet.ID.Valid {
+		return 0
+	}
+	return int(vet.ID.Int64)
 }
