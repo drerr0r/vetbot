@@ -671,34 +671,46 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 
 	InfoLog.Printf("✅ Получено %d врачей из базы данных", len(vets))
 
-	// ФИЛЬТРАЦИЯ: убираем врачей с NULL или пустыми именами
-	var validVets []*models.Veterinarian
-	for _, vet := range vets {
-		if vet.FirstName != "" && vet.LastName != "" {
-			validVets = append(validVets, vet)
-		}
-	}
-
-	InfoLog.Printf("📋 После фильтрации осталось %d валидных врачей", len(validVets))
-
-	if len(validVets) == 0 {
-		InfoLog.Printf("📭 В базе данных нет валидных врачей")
+	if len(vets) == 0 {
+		InfoLog.Printf("📭 В базе данных нет врачей")
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "📭 Врачи не найдены")
 		h.bot.Send(msg)
 		return
 	}
 
-	InfoLog.Printf("📋 Формируем список из %d врачей для отображения", len(validVets))
+	InfoLog.Printf("📋 Формируем список из %d врачей для отображения", len(vets))
 
 	var sb strings.Builder
 	sb.WriteString("👥 *Список врачей:*\n\n")
 
-	for i, vet := range validVets {
+	for i, vet := range vets {
 		status := "✅"
 		if !vet.IsActive {
 			status = "❌"
 		}
-		sb.WriteString(fmt.Sprintf("%s %d. %s %s - %s\n", status, i+1, vet.FirstName, vet.LastName, vet.Phone))
+
+		// Безопасное отображение имени и фамилии (обрабатываем NULL)
+		firstName := "Не указано"
+		if vet.FirstName != "" {
+			firstName = vet.FirstName
+		}
+
+		lastName := "Не указано"
+		if vet.LastName != "" {
+			lastName = vet.LastName
+		}
+
+		phone := "Не указан"
+		if vet.Phone != "" {
+			phone = vet.Phone
+		}
+
+		sb.WriteString(fmt.Sprintf("%s %d. %s %s - %s\n", status, i+1, firstName, lastName, phone))
+
+		// Добавляем информацию о проблемных полях
+		if vet.FirstName == "" || vet.LastName == "" || vet.Phone == "" {
+			sb.WriteString("   ⚠️ *Требует редактирования*\n")
+		}
 	}
 
 	sb.WriteString("\nВведите номер врача для управления:")
