@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql" // ДОБАВЬТЕ ЭТОТ ИМПОРТ
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -44,7 +46,14 @@ func main() {
 	}
 	defer db.Close()
 
-	// ДОБАВЛЕНО: Добавляем отсутствующие колонки в базу данных
+	// ДОБАВЛЯЕМ: ПРИМЕНЕНИЕ МИГРАЦИЙ ПРИ ЗАПУСКЕ
+	log.Println("🚀 Applying database migrations...")
+	if err := applyMigrations(db.GetDB()); err != nil { // Используем GetDB() который возвращает *sql.DB
+		log.Printf("⚠️ Migration warnings: %v", err)
+		// Не прерываем выполнение для resilience
+	}
+
+	// Добавляем отсутствующие колонки в базу данных
 	log.Println("Checking and adding missing database columns...")
 	err = db.AddMissingColumns()
 	if err != nil {
@@ -82,6 +91,55 @@ func main() {
 			return
 		}
 	}
+}
+
+// ДОБАВЛЯЕМ: Функция применения миграций - принимает *sql.DB вместо *database.Database
+func applyMigrations(db *sql.DB) error {
+	log.Println("🔄 Checking for database migrations...")
+
+	// Получаем список файлов миграций в правильном порядке
+	migrationFiles := []string{
+		"migrations/001_init.sql",
+		"migrations/002_add_reviews.sql",
+		// Добавляйте сюда новые миграции по мере их создания
+	}
+
+	for _, migrationFile := range migrationFiles {
+		// Проверяем существует ли файл
+		if _, err := os.Stat(migrationFile); os.IsNotExist(err) {
+			log.Printf("⚠️ Migration file not found: %s", migrationFile)
+			continue
+		}
+
+		// Читаем SQL из файла
+		sqlContent, err := os.ReadFile(migrationFile)
+		if err != nil {
+			return fmt.Errorf("error reading migration %s: %v", migrationFile, err)
+		}
+
+		log.Printf("📝 Applying migration: %s", migrationFile)
+
+		// Выполняем SQL - теперь используем *sql.DB.Exec
+		_, err = db.Exec(string(sqlContent))
+		if err != nil {
+			// Игнорируем ошибки "уже существует" для idempotency
+			if contains(err.Error(), "already exists") || contains(err.Error(), "duplicate") || contains(err.Error(), "exists") {
+				log.Printf("ℹ️ Migration already applied (safe to ignore): %s", migrationFile)
+				continue
+			}
+			return fmt.Errorf("error applying migration %s: %v", migrationFile, err)
+		}
+
+		log.Printf("✅ Successfully applied: %s", migrationFile)
+	}
+
+	log.Println("🎉 All migrations completed!")
+	return nil
+}
+
+// ДОБАВЛЯЕМ: Вспомогательная функция для проверки строки
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 // maskToken маскирует токен для безопасного логирования

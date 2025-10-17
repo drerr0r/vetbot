@@ -19,18 +19,26 @@ import (
 
 // MockDatabase представляет мок для базы данных
 type MockDatabase struct {
-	Users                map[int64]*models.User
-	Specializations      map[int]*models.Specialization
-	Veterinarians        map[int]*models.Veterinarian
-	Clinics              map[int]*models.Clinic
-	Schedules            map[int]*models.Schedule
-	Cities               map[int]*models.City
-	UserError            error
-	SpecializationsError error
-	VeterinariansError   error
-	ClinicsError         error
-	SchedulesError       error
-	CitiesError          error
+	Users                       map[int64]*models.User
+	Specializations             map[int]*models.Specialization
+	Veterinarians               map[int]*models.Veterinarian
+	Clinics                     map[int]*models.Clinic
+	Schedules                   map[int]*models.Schedule
+	Cities                      map[int]*models.City
+	UserError                   error
+	SpecializationsError        error
+	VeterinariansError          error
+	ClinicsError                error
+	SchedulesError              error
+	CitiesError                 error
+	CreateReviewFunc            func(review *models.Review) error
+	GetReviewByIDFunc           func(reviewID int) (*models.Review, error)
+	GetApprovedReviewsByVetFunc func(vetID int) ([]*models.Review, error)
+	GetPendingReviewsFunc       func() ([]*models.Review, error)
+	UpdateReviewStatusFunc      func(reviewID int, status string, moderatorID int) error
+	HasUserReviewForVetFunc     func(userID int, vetID int) (bool, error)
+	GetReviewStatsFunc          func(vetID int) (*models.ReviewStats, error)
+	GetUserByTelegramIDFunc     func(telegramID int64) (*models.User, error)
 }
 
 // NewMockDatabase создает новый мок базы данных
@@ -979,4 +987,53 @@ func CreateRealTestMainHandlers() (*MainHandler, *MockBot) {
 // GetToken возвращает тестовый токен для MockBot
 func (m *MockBot) GetToken() string {
 	return "test_bot_token"
+}
+
+func (m *MockDatabase) CreateReview(review *models.Review) error {
+	if m.CreateReviewFunc != nil {
+		return m.CreateReviewFunc(review)
+	}
+	return nil
+}
+
+func (m *MockDatabase) GetReviewByID(reviewID int) (*models.Review, error) {
+	if m.GetReviewByIDFunc != nil {
+		return m.GetReviewByIDFunc(reviewID)
+	}
+	return &models.Review{}, nil
+}
+
+func (m *MockDatabase) GetApprovedReviewsByVet(vetID int) ([]*models.Review, error) {
+	if m.GetApprovedReviewsByVetFunc != nil {
+		return m.GetApprovedReviewsByVetFunc(vetID)
+	}
+	return []*models.Review{}, nil
+}
+
+func (m *MockDatabase) GetPendingReviews() ([]*models.Review, error) {
+	if m.GetPendingReviewsFunc != nil {
+		return m.GetPendingReviewsFunc()
+	}
+	return []*models.Review{}, nil
+}
+
+func (m *MockDatabase) UpdateReviewStatus(reviewID int, status string, moderatorID int) error {
+	if m.UpdateReviewStatusFunc != nil {
+		return m.UpdateReviewStatusFunc(reviewID, status, moderatorID)
+	}
+	return nil
+}
+
+func (m *MockDatabase) HasUserReviewForVet(userID int, vetID int) (bool, error) {
+	if m.HasUserReviewForVetFunc != nil {
+		return m.HasUserReviewForVetFunc(userID, vetID)
+	}
+	return false, nil
+}
+
+func (m *MockDatabase) GetReviewStats(vetID int) (*models.ReviewStats, error) {
+	if m.GetReviewStatsFunc != nil {
+		return m.GetReviewStatsFunc(vetID)
+	}
+	return &models.ReviewStats{}, nil
 }

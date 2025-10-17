@@ -861,3 +861,45 @@ func (d *Database) SearchCitiesByRegion(region string) ([]*models.City, error) {
 
 	return cities, nil
 }
+
+// Добавьте методы для работы с отзывами в структуру Database
+
+func (d *Database) CreateReview(review *models.Review) error {
+	repo := NewReviewRepository(d.db)
+	return repo.CreateReview(review)
+}
+
+func (d *Database) GetReviewByID(reviewID int) (*models.Review, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.GetReviewByID(reviewID)
+}
+
+func (d *Database) GetApprovedReviewsByVet(vetID int) ([]*models.Review, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.GetApprovedReviewsByVet(vetID)
+}
+
+func (d *Database) GetPendingReviews() ([]*models.Review, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.GetPendingReviews()
+}
+
+func (d *Database) UpdateReviewStatus(reviewID int, status string, moderatorID int) error {
+	repo := NewReviewRepository(d.db)
+	return repo.UpdateReviewStatus(reviewID, status, moderatorID)
+}
+
+func (d *Database) HasUserReviewForVet(userID int, vetID int) (bool, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.HasUserReviewForVet(userID, vetID)
+}
+
+func (d *Database) GetReviewStats(vetID int) (*models.ReviewStats, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.GetReviewStats(vetID)
+}
+
+func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.GetUserByTelegramID(telegramID)
+}

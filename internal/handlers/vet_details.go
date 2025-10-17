@@ -50,6 +50,16 @@ func (h *VetHandlers) formatVeterinarianDetails(vet *models.Veterinarian) string
 	// Основная информация
 	message.WriteString(fmt.Sprintf("👨‍⚕️ *%s %s*\n", vet.FirstName, vet.LastName))
 
+	// Получаем статистику отзывов
+	stats, err := h.db.GetReviewStats(models.GetVetIDAsIntOrZero(vet))
+	if err == nil {
+		if stats.ApprovedReviews > 0 {
+			message.WriteString(fmt.Sprintf("⭐ *Рейтинг:* %.1f/5 (%d отзывов)\n", stats.AverageRating, stats.ApprovedReviews))
+		} else {
+			message.WriteString("⭐ *Рейтинг:* пока нет отзывов\n")
+		}
+	}
+
 	if vet.Phone != "" {
 		message.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", vet.Phone))
 	}
@@ -155,6 +165,10 @@ func (h *VetHandlers) formatVeterinarianDetails(vet *models.Veterinarian) string
 // createVetDetailsKeyboard создает клавиатуру для детального просмотра врача
 func (h *VetHandlers) createVetDetailsKeyboard(vetID int) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📝 Отзывы", fmt.Sprintf("show_reviews_%d", vetID)),
+			tgbotapi.NewInlineKeyboardButtonData("💬 Оставить отзыв", fmt.Sprintf("add_review_%d", vetID)),
+		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📅 Записаться", fmt.Sprintf("appointment_%d", vetID)),
 			tgbotapi.NewInlineKeyboardButtonData("⭐ В избранное", fmt.Sprintf("favorite_%d", vetID)),

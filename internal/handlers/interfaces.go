@@ -30,6 +30,14 @@ type Database interface {
 	GetClinicByID(id int) (*models.Clinic, error)
 	SpecializationExists(id int) (bool, error)
 	AddMissingColumns() error
+	CreateReview(review *models.Review) error
+	GetReviewByID(reviewID int) (*models.Review, error)
+	GetApprovedReviewsByVet(vetID int) ([]*models.Review, error)
+	GetPendingReviews() ([]*models.Review, error)
+	UpdateReviewStatus(reviewID int, status string, moderatorID int) error
+	HasUserReviewForVet(userID int, vetID int) (bool, error)
+	GetReviewStats(vetID int) (*models.ReviewStats, error)
+	GetUserByTelegramID(telegramID int64) (*models.User, error)
 	Close() error
 	GetDB() *sql.DB
 

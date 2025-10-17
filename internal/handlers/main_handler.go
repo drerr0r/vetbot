@@ -22,21 +22,25 @@ import (
 
 // MainHandler обрабатывает все входящие обновления
 type MainHandler struct {
-	bot           BotAPI   // Используем интерфейс
-	db            Database // Используем интерфейс
-	config        *utils.Config
-	vetHandlers   *VetHandlers
-	adminHandlers *AdminHandlers
+	bot            BotAPI   // Используем интерфейс
+	db             Database // Используем интерфейс
+	config         *utils.Config
+	vetHandlers    *VetHandlers
+	adminHandlers  *AdminHandlers
+	reviewHandlers *ReviewHandlers
+	adminState     map[int64]string
 }
 
 // NewMainHandler создает новый экземпляр MainHandler
 func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler {
 	return &MainHandler{
-		bot:           bot,
-		db:            db,
-		config:        config,
-		vetHandlers:   NewVetHandlers(bot, db),
-		adminHandlers: NewAdminHandlers(bot, db, config),
+		bot:            bot,
+		db:             db,
+		config:         config,
+		vetHandlers:    NewVetHandlers(bot, db),
+		adminHandlers:  NewAdminHandlers(bot, db, config),
+		reviewHandlers: NewReviewHandlers(bot, db, config.AdminIDs),
+		adminState:     make(map[int64]string),
 	}
 }
 
@@ -171,6 +175,18 @@ func (h *MainHandler) handleSearchCommand(update tgbotapi.Update) {
 
 // handleTextMessage обрабатывает обычные текстовые сообщения
 func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	state := h.adminState[userID]
+
+	// Если пользователь в процессе добавления отзыва
+	if strings.HasPrefix(state, "review_") {
+		switch state {
+		case "review_comment":
+			h.reviewHandlers.HandleReviewComment(update, update.Message.Text)
+			return
+		}
+	}
+
 	// Для обычных пользователей показываем справку
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		"Я понимаю только команды. Используйте /help для списка доступных команд.")

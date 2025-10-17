@@ -164,3 +164,35 @@ func GetVetIDAsIntOrZero(vet *Veterinarian) int {
 	}
 	return int(vet.ID.Int64)
 }
+
+// Review представляет отзыв о враче
+type Review struct {
+	ID             int           `json:"id"`
+	VeterinarianID int           `json:"veterinarian_id"`
+	UserID         int           `json:"user_id"`
+	Rating         int           `json:"rating"` // 1-5 звезд
+	Comment        string        `json:"comment"`
+	Status         string        `json:"status"` // pending/approved/rejected
+	CreatedAt      time.Time     `json:"created_at"`
+	ModeratedAt    sql.NullTime  `json:"moderated_at"`
+	ModeratedBy    sql.NullInt64 `json:"moderated_by"`
+
+	// Для удобства - связанные данные
+	Veterinarian *Veterinarian `json:"veterinarian,omitempty"`
+	User         *User         `json:"user,omitempty"`
+	Moderator    *User         `json:"moderator,omitempty"`
+}
+
+// ReviewStats представляет статистику отзывов по врачу
+type ReviewStats struct {
+	VeterinarianID  int     `json:"veterinarian_id"`
+	AverageRating   float64 `json:"average_rating"`
+	TotalReviews    int     `json:"total_reviews"`
+	ApprovedReviews int     `json:"approved_reviews"`
+}
+
+// ReviewEditData временные данные для модерации отзывов
+type ReviewEditData struct {
+	ReviewID int    `json:"review_id"`
+	Action   string `json:"action"` // approve/reject
+}

@@ -26,21 +26,23 @@ var (
 
 // AdminHandlers содержит обработчики для административных функций
 type AdminHandlers struct {
-	bot        BotAPI   // Используем интерфейс
-	db         Database // Используем интерфейс
-	config     *utils.Config
-	adminState map[int64]string
-	tempData   map[string]interface{} // Добавляем недостающее поле
+	bot            BotAPI   // Используем интерфейс
+	db             Database // Используем интерфейс
+	config         *utils.Config
+	adminState     map[int64]string
+	tempData       map[string]interface{}
+	reviewHandlers *ReviewHandlers
 }
 
 // NewAdminHandlers создает новый экземпляр AdminHandlers
 func NewAdminHandlers(bot BotAPI, db Database, config *utils.Config) *AdminHandlers {
 	return &AdminHandlers{
-		bot:        bot,
-		db:         db,
-		config:     config,
-		adminState: make(map[int64]string),
-		tempData:   make(map[string]interface{}), // Инициализируем
+		bot:            bot,
+		db:             db,
+		config:         config,
+		adminState:     make(map[int64]string),
+		tempData:       make(map[string]interface{}),
+		reviewHandlers: NewReviewHandlers(bot, db, config.AdminIDs),
 	}
 }
 
@@ -256,6 +258,7 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showSettings(update)
 	case "❌ Выйти из админки":
 		h.closeAdmin(update)
+
 	default:
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 			"Используйте кнопки админской панели")
@@ -811,7 +814,6 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("💼 Редактировать опыт"),
-			// УБЕДИТЕСЬ ЧТО ЭТА КНОПКА ЕСТЬ ↓
 			tgbotapi.NewKeyboardButton("🏙️ Изменить город"),
 		),
 		tgbotapi.NewKeyboardButtonRow(

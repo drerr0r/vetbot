@@ -753,6 +753,12 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 		h.handleSearchCityCallback(callback)
 	case strings.HasPrefix(data, "vet_details_"):
 		h.handleVetDetailsCallback(callback)
+
+	case strings.HasPrefix(data, "show_reviews_"):
+		h.handleShowReviewsCallback(callback)
+	case strings.HasPrefix(data, "add_review_"):
+		h.handleAddReviewCallback(callback)
+
 	default:
 		// Неизвестный callback
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Неизвестная команда")
@@ -1072,4 +1078,41 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// Добавьте новые методы:
+// handleShowReviewsCallback обрабатывает показ отзывов
+func (h *VetHandlers) handleShowReviewsCallback(callback *tgbotapi.CallbackQuery) {
+	vetIDStr := strings.TrimPrefix(callback.Data, "show_reviews_")
+	vetID, err := strconv.Atoi(vetIDStr)
+	if err != nil {
+		ErrorLog.Printf("Error parsing vet ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	// Здесь нужно будет передать управление в ReviewHandlers
+	// Пока просто логируем
+	InfoLog.Printf("Show reviews requested for vet: %d", vetID)
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "Функция отзывов в разработке")
+	h.bot.Request(callbackConfig)
+}
+
+// handleAddReviewCallback обрабатывает добавление отзыва
+func (h *VetHandlers) handleAddReviewCallback(callback *tgbotapi.CallbackQuery) {
+	vetIDStr := strings.TrimPrefix(callback.Data, "add_review_")
+	vetID, err := strconv.Atoi(vetIDStr)
+	if err != nil {
+		ErrorLog.Printf("Error parsing vet ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	// Здесь нужно будет передать управление в ReviewHandlers
+	// Пока просто логируем
+	InfoLog.Printf("Add review requested for vet: %d", vetID)
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "Функция добавления отзывов в разработке")
+	h.bot.Request(callbackConfig)
 }
