@@ -31,7 +31,11 @@ func New(dataSourceName string) (*Database, error) {
 	}
 
 	log.Println("Successfully connected to database")
-	return &Database{db: db}, nil
+	return &Database{
+		db:      db,
+		users:   NewUserRepository(db),
+		reviews: NewReviewRepository(db),
+	}, nil
 }
 
 // Close закрывает подключение к базе данных
@@ -344,11 +348,12 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		var email, description, patronymic sql.NullString
 		var experienceYears sql.NullInt64
 		var vetID sql.NullInt64
+		var cityID2 sql.NullInt64 // ДОПОЛНИТЕЛЬНОЕ ПОЛЕ ДЛЯ city.id
 
 		err := rows.Scan(
 			&vetID, &vet.FirstName, &vet.LastName, &patronymic, &vet.Phone, &email,
 			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
-			&city.ID, &city.Name, &city.Region, &cityCreatedAt,
+			&cityID2, &city.Name, &city.Region, &cityCreatedAt, // ИСПРАВЛЕНО: cityID2 вместо city.ID
 		)
 		if err != nil {
 			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
@@ -366,10 +371,14 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 			vet.Description = description
 			vet.ExperienceYears = experienceYears
 			vet.CityID = cityID
-			vet.Patronymic = patronymic // НОВОЕ ПОЛЕ
+			vet.Patronymic = patronymic
 
-			if cityID.Valid && cityCreatedAt.Valid {
-				city.CreatedAt = cityCreatedAt.Time
+			// ИСПРАВЛЕНО: используем cityID2 для установки ID города
+			if cityID2.Valid {
+				city.ID = int(cityID2.Int64)
+				if cityCreatedAt.Valid {
+					city.CreatedAt = cityCreatedAt.Time
+				}
 				vet.City = &city
 			}
 
