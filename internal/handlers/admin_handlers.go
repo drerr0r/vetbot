@@ -86,7 +86,15 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 	text := update.Message.Text
 	state := h.adminState[userID]
 
-	InfoLog.Printf("Admin message from %d: %s (state: %s)", userID, text, state)
+	InfoLog.Printf("🔍 DEBUG AdminMessage: user %d, text '%s', state '%s'", userID, text, state)
+
+	// Если пользователь ввел команду /admin, сбрасываем состояние
+	if text == "/admin" {
+		InfoLog.Printf("🔍 DEBUG: /admin command detected, resetting state")
+		h.adminState[userID] = "main_menu"
+		h.HandleAdmin(update)
+		return
+	}
 
 	// Сначала проверяем кнопку "Назад" независимо от состояния
 	if text == "🔙 Назад" {

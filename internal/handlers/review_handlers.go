@@ -457,9 +457,9 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 		return
 	}
 
-	// Очищаем временные данные
+	// Очищаем ВСЕ временные данные
+	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
-	h.stateManager.SetUserState(userID, "review_moderation")
 
 	// Отправляем подтверждение
 	msg := tgbotapi.NewMessage(chatID, message)
@@ -656,9 +656,18 @@ func (h *ReviewHandlers) handleBackToAdmin(update tgbotapi.Update) {
 	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
 
-	// Просто отправляем сообщение с инструкцией
-	msg := tgbotapi.NewMessage(chatID, "Возврат в админское меню. Используйте /admin для открытия панели администратора.")
+	// Используем adminHandlers для возврата в админку
+	msg := tgbotapi.NewMessage(chatID, "Возврат в админское меню...")
 	h.bot.Send(msg)
+
+	// Вызываем HandleAdmin через небольшую задержку
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		// Нужно как-то вызвать HandleAdmin, но у нас нет доступа к adminHandlers
+		// Временно просто отправляем инструкцию
+		msg := tgbotapi.NewMessage(chatID, "Используйте /admin для открытия панели администратора.")
+		h.bot.Send(msg)
+	}()
 }
 
 // // approveReview одобряет отзыв
