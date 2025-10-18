@@ -1253,10 +1253,14 @@ func (h *VetHandlers) formatVeterinarianInfoCompact(vet *models.Veterinarian, in
 func (h *VetHandlers) sendVetWithDetailsButton(chatID int64, vet *models.Veterinarian, index int) error {
 	message := h.formatVeterinarianInfoCompact(vet, index)
 
-	// Создаем клавиатуру с кнопкой "Подробнее"
+	// Создаем клавиатуру с кнопкой "Подробнее" и "Отзывы"
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_%d", models.GetVetIDAsIntOrZero(vet))),
+			tgbotapi.NewInlineKeyboardButtonData("📋 Детальная информация", fmt.Sprintf("vet_details_%d", models.GetVetIDAsIntOrZero(vet))),
+			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", models.GetVetIDAsIntOrZero(vet))),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📝 Добавить отзыв", fmt.Sprintf("add_review_%d", models.GetVetIDAsIntOrZero(vet))),
 		),
 	)
 

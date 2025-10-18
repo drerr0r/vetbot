@@ -26,23 +26,25 @@ var (
 
 // AdminHandlers содержит обработчики для административных функций
 type AdminHandlers struct {
-	bot          BotAPI
-	db           Database
-	config       *utils.Config
-	stateManager *StateManager
-	adminState   map[int64]string
-	tempData     map[string]interface{}
+	bot            BotAPI
+	db             Database
+	config         *utils.Config
+	stateManager   *StateManager
+	adminState     map[int64]string
+	tempData       map[string]interface{}
+	reviewHandlers *ReviewHandlers
 }
 
 // NewAdminHandlers создает новый экземпляр AdminHandlers
-func NewAdminHandlers(bot BotAPI, db Database, config *utils.Config, stateManager *StateManager) *AdminHandlers {
+func NewAdminHandlers(bot BotAPI, db Database, config *utils.Config, stateManager *StateManager, reviewHandlers *ReviewHandlers) *AdminHandlers {
 	return &AdminHandlers{
-		bot:          bot,
-		db:           db,
-		config:       config,
-		stateManager: stateManager,
-		adminState:   make(map[int64]string),
-		tempData:     make(map[string]interface{}),
+		bot:            bot,
+		db:             db,
+		config:         config,
+		stateManager:   stateManager,
+		adminState:     make(map[int64]string),
+		tempData:       make(map[string]interface{}),
+		reviewHandlers: reviewHandlers,
 	}
 }
 
@@ -62,9 +64,10 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("📊 Статистика"),
-			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
+			tgbotapi.NewKeyboardButton("⭐ Модерация отзывов"), // ДОБАВЬТЕ ЭТУ КНОПКУ
 		),
 		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
 			tgbotapi.NewKeyboardButton("❌ Выйти из админки"),
 		),
 	)
@@ -251,6 +254,8 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showImportMenu(update)
 	case "📊 Статистика":
 		h.HandleStats(update)
+	case "⭐ Модерация отзывов":
+		h.handleReviewModeration(update)
 	case "⚙️ Настройки":
 		h.showSettings(update)
 	case "❌ Выйти из админки":
@@ -3050,4 +3055,14 @@ func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text stri
 	}
 
 	h.showVetEditMenu(update, vet)
+}
+
+// handleReviewModeration обрабатывает модерацию отзывов
+func (h *AdminHandlers) handleReviewModeration(update tgbotapi.Update) {
+
+	// Используем существующий метод из ReviewHandlers
+	h.reviewHandlers.HandleReviewModeration(update)
+
+	// Устанавливаем состояние для возврата в админку
+	h.adminState[update.Message.From.ID] = "review_moderation"
 }

@@ -435,6 +435,12 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
 func (h *ReviewHandlers) notifyAdminsAboutNewReview(review *models.Review) {
+
+	if review == nil || review.Veterinarian == nil {
+		ErrorLog.Printf("notifyAdminsAboutNewReview: review or veterinarian is nil")
+		return
+	}
+
 	// Реализация уведомления администраторов
 	for _, adminID := range h.adminIDs {
 		msg := tgbotapi.NewMessage(adminID,
@@ -447,7 +453,6 @@ func (h *ReviewHandlers) notifyAdminsAboutNewReview(review *models.Review) {
 		h.bot.Send(msg)
 	}
 }
-
 func (h *ReviewHandlers) isAdmin(userID int64) bool {
 	for _, adminID := range h.adminIDs {
 		if userID == adminID {

@@ -35,17 +35,24 @@ type MainHandler struct {
 func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler {
 	stateManager := NewStateManager()
 
-	handler := &MainHandler{
-		bot:          bot,
-		db:           db,
-		config:       config,
-		stateManager: stateManager,
-	}
+	// Сначала создаем ReviewHandlers
+	reviewHandlers := NewReviewHandlers(bot, db, config.AdminIDs, stateManager)
 
-	handler.vetHandlers = NewVetHandlers(bot, db, config.AdminIDs, stateManager)
-	handler.adminHandlers = NewAdminHandlers(bot, db, config, stateManager)
-	handler.reviewHandlers = NewReviewHandlers(bot, db, config.AdminIDs, stateManager)
-	return handler
+	// Затем передаем их в AdminHandlers
+	adminHandlers := NewAdminHandlers(bot, db, config, stateManager, reviewHandlers)
+
+	// Создаем VetHandlers
+	vetHandlers := NewVetHandlers(bot, db, config.AdminIDs, stateManager)
+
+	return &MainHandler{
+		bot:            bot,
+		db:             db,
+		config:         config,
+		stateManager:   stateManager,
+		vetHandlers:    vetHandlers,
+		adminHandlers:  adminHandlers, // Теперь эта переменная используется
+		reviewHandlers: reviewHandlers,
+	}
 }
 
 // HandleUpdate обрабатывает входящее обновление от Telegram

@@ -22,7 +22,10 @@ func TestBasicCompilation(t *testing.T) {
 	assert.NotNil(t, vetHandlers)
 
 	config := CreateTestConfig()
-	adminHandlers := NewAdminHandlers(mockBot, mockDB, config, stateManager)
+
+	// Создаем mock ReviewHandlers для AdminHandlers
+	mockReviewHandlers := &ReviewHandlers{}
+	adminHandlers := NewAdminHandlers(mockBot, mockDB, config, stateManager, mockReviewHandlers)
 	assert.NotNil(t, adminHandlers)
 
 	// MainHandler создает StateManager сам, поэтому не передаем его

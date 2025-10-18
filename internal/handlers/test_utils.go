@@ -614,7 +614,11 @@ func CreateTestAdminHandlers() (*AdminHandlers, *MockBot, *MockDatabase) {
 	mockDB := NewMockDatabase()
 	config := CreateTestConfig()
 	stateManager := NewTestStateManager()
-	handlers := NewAdminHandlers(mockBot, mockDB, config, stateManager)
+
+	// Создаем mock ReviewHandlers
+	mockReviewHandlers := &ReviewHandlers{}
+
+	handlers := NewAdminHandlers(mockBot, mockDB, config, stateManager, mockReviewHandlers)
 	return handlers, mockBot, mockDB
 }
 

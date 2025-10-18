@@ -21,15 +21,19 @@ func TestNewAdminHandlers(t *testing.T) {
 	config := &utils.Config{AdminIDs: []int64{12345}}
 	stateManager := NewTestStateManager()
 
-	// Act
-	handler := NewAdminHandlers(mockBot, mockDB, config, stateManager)
-	// Assert
+	// Создаем mock ReviewHandlers
+	mockReviewHandlers := &ReviewHandlers{}
+
+	// Act - обновляем вызов конструктора
+	handler := NewAdminHandlers(mockBot, mockDB, config, stateManager, mockReviewHandlers)
+
 	// Assert
 	assert.NotNil(t, handler)
 	assert.Equal(t, mockBot, handler.bot)
 	assert.Equal(t, mockDB, handler.db)
 	assert.Equal(t, config, handler.config)
 	assert.NotNil(t, handler.stateManager)
+	assert.Equal(t, mockReviewHandlers, handler.reviewHandlers) // Добавляем проверку
 }
 
 func TestAdminHandlersTempData(t *testing.T) {
@@ -38,7 +42,12 @@ func TestAdminHandlersTempData(t *testing.T) {
 	mockDB := NewMockDatabase()
 	config := &utils.Config{AdminIDs: []int64{12345}}
 	stateManager := NewTestStateManager()
-	handler := NewAdminHandlers(mockBot, mockDB, config, stateManager)
+
+	// Создаем mock ReviewHandlers
+	mockReviewHandlers := &ReviewHandlers{}
+
+	// Обновляем вызов конструктора
+	handler := NewAdminHandlers(mockBot, mockDB, config, stateManager, mockReviewHandlers)
 
 	// Act & Assert - проверяем что tempData работает
 	handler.stateManager.SetUserData(12345, "test_key", "test_value")

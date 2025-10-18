@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/drerr0r/vetbot/internal/models"
@@ -134,21 +135,39 @@ func (h *VetHandlers) formatVeterinarianDetails(vet *models.Veterinarian) string
 				}
 			}
 
-			// Расписание по дням
-			daysMap := make(map[int][]string)
+			// Расписание по дням - ИСПРАВЛЕННАЯ ЧАСТЬ
+			daysMap := make(map[int]map[string]bool) // Используем map для уникальности временных слотов
 			for _, schedule := range schedules {
-				_ = getDayName(schedule.DayOfWeek)
 				timeSlot := fmt.Sprintf("%s-%s", schedule.StartTime, schedule.EndTime)
-				daysMap[schedule.DayOfWeek] = append(daysMap[schedule.DayOfWeek], timeSlot)
+
+				// Инициализируем map для дня если нужно
+				if daysMap[schedule.DayOfWeek] == nil {
+					daysMap[schedule.DayOfWeek] = make(map[string]bool)
+				}
+
+				// Добавляем временной слот только если он уникален
+				daysMap[schedule.DayOfWeek][timeSlot] = true
 			}
 
 			if len(daysMap) > 0 {
 				message.WriteString("📅 *Расписание приема:*\n")
 				var scheduleParts []string
+
+				// Сортируем дни недели по порядку
 				for day := 1; day <= 7; day++ {
-					if times, exists := daysMap[day]; exists {
+					if timeSlotsMap, exists := daysMap[day]; exists && len(timeSlotsMap) > 0 {
 						dayName := getDayName(day)
-						scheduleParts = append(scheduleParts, fmt.Sprintf("   • %s: %s", dayName, strings.Join(times, ", ")))
+
+						// Конвертируем map в slice уникальных временных слотов
+						var uniqueTimeSlots []string
+						for timeSlot := range timeSlotsMap {
+							uniqueTimeSlots = append(uniqueTimeSlots, timeSlot)
+						}
+
+						// Сортируем временные слоты для красивого отображения
+						sort.Strings(uniqueTimeSlots)
+
+						scheduleParts = append(scheduleParts, fmt.Sprintf("   • %s: %s", dayName, strings.Join(uniqueTimeSlots, ", ")))
 					}
 				}
 				message.WriteString(strings.Join(scheduleParts, "\n"))
