@@ -101,12 +101,12 @@ func (d *Database) SpecializationExists(id int) (bool, error) {
 // GetVeterinariansBySpecialization возвращает врачей по специализации
 func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*models.Veterinarian, error) {
 	query := `
-		SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email, 
-		       v.description, v.experience_years, v.is_active, v.created_at
-		FROM veterinarians v
-		INNER JOIN vet_specializations vs ON v.id = vs.vet_id
-		WHERE vs.specialization_id = $1 AND v.is_active = true
-		ORDER BY v.first_name, v.last_name`
+        SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email, 
+               v.description, v.experience_years, v.is_active, v.created_at
+        FROM veterinarians v
+        INNER JOIN vet_specializations vs ON v.id = vs.vet_id
+        WHERE vs.specialization_id = $1 AND v.is_active = true
+        ORDER BY v.first_name, v.last_name`
 
 	rows, err := d.db.Query(query, specializationID)
 	if err != nil {
@@ -117,16 +117,28 @@ func (d *Database) GetVeterinariansBySpecialization(specializationID int) ([]*mo
 	var veterinarians []*models.Veterinarian
 	for rows.Next() {
 		var vet models.Veterinarian
-		err := rows.Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
-			&vet.Description, &vet.ExperienceYears, &vet.IsActive, &vet.CreatedAt)
+		var vetID sql.NullInt64
+		var email, description sql.NullString
+		var experienceYears sql.NullInt64
+
+		err := rows.Scan(&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
+			&description, &experienceYears, &vet.IsActive, &vet.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
 
-		// Загружаем специализации для каждого врача
-		specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
-		if err == nil {
-			vet.Specializations = specs
+		// Заполняем nullable поля
+		vet.ID = vetID
+		vet.Email = email
+		vet.Description = description
+		vet.ExperienceYears = experienceYears
+
+		// Загружаем специализации для каждого врача только если ID валиден
+		if vetID.Valid {
+			specs, err := d.GetSpecializationsByVetID(int(vetID.Int64))
+			if err == nil {
+				vet.Specializations = specs
+			}
 		}
 
 		veterinarians = append(veterinarians, &vet)
@@ -902,4 +914,32 @@ func (d *Database) GetReviewStats(vetID int) (*models.ReviewStats, error) {
 func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
 	repo := NewReviewRepository(d.db)
 	return repo.GetUserByTelegramID(telegramID)
+}
+
+// DebugSpecializationVetsCount - диагностическая функция для отладки количества врачей по специализациям
+func (d *Database) DebugSpecializationVetsCount() (map[int]int, error) {
+	query := `
+        SELECT vs.specialization_id, COUNT(DISTINCT v.id) as vet_count 
+        FROM vet_specializations vs 
+        LEFT JOIN veterinarians v ON vs.vet_id = v.id AND v.is_active = true
+        GROUP BY vs.specialization_id 
+        ORDER BY vs.specialization_id`
+
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int]int)
+	for rows.Next() {
+		var specID, count int
+		err := rows.Scan(&specID, &count)
+		if err != nil {
+			return nil, err
+		}
+		result[specID] = count
+	}
+
+	return result, nil
 }

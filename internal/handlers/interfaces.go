@@ -71,4 +71,7 @@ type Database interface {
 	GetSpecializationByName(name string) (*models.Specialization, error)
 	CreateSpecialization(spec *models.Specialization) error
 	AddVeterinarianSpecialization(vetID int, specID int) error
+
+	// Дебаг
+	DebugSpecializationVetsCount() (map[int]int, error)
 }

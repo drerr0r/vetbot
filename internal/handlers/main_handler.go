@@ -150,6 +150,15 @@ func (h *MainHandler) handleCommand(update tgbotapi.Update, isAdmin bool) {
 			InfoLog.Printf("Executing /stats")
 			h.adminHandlers.HandleStats(update)
 		}
+	case "debug":
+		if isAdmin {
+			InfoLog.Printf("Executing /debug")
+			h.handleDebugCommand(update)
+		} else {
+			InfoLog.Printf("Debug access denied for user %d", update.Message.From.ID)
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "У вас нет прав администратора")
+			h.bot.Send(msg)
+		}
 	default:
 		InfoLog.Printf("Unknown command: %s", command)
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
@@ -787,4 +796,43 @@ func (h *MainHandler) importClinics(_ string, _ string) (string, error) {
 // SetUserState устанавливает состояние пользователя через StateManager
 func (h *MainHandler) SetUserState(userID int64, state string) {
 	h.stateManager.SetUserState(userID, state)
+}
+
+func (h *MainHandler) handleDebugCommand(update tgbotapi.Update) {
+	chatID := update.Message.Chat.ID
+
+	// Проверяем, что пользователь - администратор
+	if !h.isAdmin(update.Message.From.ID) {
+		msg := tgbotapi.NewMessage(chatID, "❌ Эта команда только для администраторов")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Вызываем диагностику
+	stats, err := h.db.DebugSpecializationVetsCount()
+	if err != nil {
+		ErrorLog.Printf("Debug error: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка при получении диагностической информации")
+		h.bot.Send(msg)
+		return
+	}
+
+	// Формируем сообщение с результатами
+	var result strings.Builder
+	result.WriteString("🔍 *Диагностика врачей по специализациям:*\n\n")
+
+	for specID, count := range stats {
+		// Получаем название специализации
+		spec, err := h.db.GetSpecializationByID(specID)
+		specName := "Неизвестно"
+		if err == nil && spec != nil {
+			specName = spec.Name
+		}
+
+		result.WriteString(fmt.Sprintf("• %s (ID: %d): %d врачей\n", specName, specID, count))
+	}
+
+	msg := tgbotapi.NewMessage(chatID, result.String())
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
 }

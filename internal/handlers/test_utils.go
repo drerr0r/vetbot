@@ -39,6 +39,8 @@ type MockDatabase struct {
 	HasUserReviewForVetFunc     func(userID int, vetID int) (bool, error)
 	GetReviewStatsFunc          func(vetID int) (*models.ReviewStats, error)
 	GetUserByTelegramIDFunc     func(telegramID int64) (*models.User, error)
+
+	DebugSpecializationVetsCountFunc func() (map[int]int, error)
 }
 
 // NewMockDatabase создает новый мок базы данных
@@ -1153,4 +1155,16 @@ func (m *MockStateManager) ClearUserData(userID int64) {
 // NewTestStateManager создает StateManager для тестов
 func NewTestStateManager() *StateManager {
 	return NewStateManager()
+}
+
+// И затем реализуйте метод:
+func (m *MockDatabase) DebugSpecializationVetsCount() (map[int]int, error) {
+	if m.DebugSpecializationVetsCountFunc != nil {
+		return m.DebugSpecializationVetsCountFunc()
+	}
+
+	// Возвращаем данные по умолчанию для тестов
+	return map[int]int{
+		1: 5, 2: 3, 3: 0, 4: 2, 5: 0, 6: 2, 7: 1,
+	}, nil
 }
