@@ -403,23 +403,24 @@ func (d *Database) hasCompleteRequiredData(vet *models.Veterinarian) bool {
 	return true
 }
 
-// GetVeterinarianByID возвращает врача по ID с информацией о городе
 func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
-	query := `SELECT id, first_name, last_name, phone, email, description, experience_years, is_active, city_id, created_at 
+	query := `SELECT id, first_name, last_name, patronymic, phone, email, description, experience_years, is_active, city_id, created_at 
               FROM veterinarians WHERE id = $1`
 
 	var vet models.Veterinarian
 	var cityID sql.NullInt64
-	var email, description sql.NullString
+	var patronymic, email, description sql.NullString
 	var experienceYears sql.NullInt64
 
-	err := d.db.QueryRow(query, id).Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone,
-		&email, &description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt)
+	err := d.db.QueryRow(query, id).Scan(&vet.ID, &vet.FirstName, &vet.LastName,
+		&patronymic, &vet.Phone, &email, &description, &experienceYears,
+		&vet.IsActive, &cityID, &vet.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 
 	// Заполняем nullable поля
+	vet.Patronymic = patronymic
 	vet.Email = email
 	vet.Description = description
 	vet.ExperienceYears = experienceYears
@@ -761,7 +762,6 @@ func (d *Database) UpdateVeterinarian(vet *models.Veterinarian) error {
 	return err
 }
 
-// CreateVeterinarian создает нового врача
 func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
 	// Сначала проверяем, нет ли уже врача с таким именем и телефоном
 	var existingID int
@@ -778,12 +778,12 @@ func (d *Database) CreateVeterinarian(vet *models.Veterinarian) error {
 	}
 
 	query := `INSERT INTO veterinarians 
-        (first_name, last_name, phone, email, description, experience_years, is_active, city_id) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+        (first_name, last_name, patronymic, phone, email, description, experience_years, is_active, city_id) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
         RETURNING id, created_at`
 
 	return d.db.QueryRow(query,
-		vet.FirstName, vet.LastName, vet.Phone, vet.Email,
+		vet.FirstName, vet.LastName, vet.Patronymic, vet.Phone, vet.Email,
 		vet.Description, vet.ExperienceYears, vet.IsActive, vet.CityID,
 	).Scan(&vet.ID, &vet.CreatedAt)
 }
@@ -1073,7 +1073,6 @@ func (db *Database) GetClinicsCountByCity(cityID int) (int, error) {
 
 // ========== МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ ПОЛЕЙ ==========
 
-// UpdateVeterinarianField обновляет конкретное поле врача
 func (db *Database) UpdateVeterinarianField(vetID int, field string, value interface{}) error {
 	var query string
 	var args []interface{}
