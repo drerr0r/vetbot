@@ -348,12 +348,13 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		var email, description, patronymic sql.NullString
 		var experienceYears sql.NullInt64
 		var vetID sql.NullInt64
-		var cityID2 sql.NullInt64 // ДОПОЛНИТЕЛЬНОЕ ПОЛЕ ДЛЯ city.id
+		var cityID2 sql.NullInt64
+		var cityName, cityRegion sql.NullString // ДОБАВИТЬ: для обработки NULL
 
 		err := rows.Scan(
 			&vetID, &vet.FirstName, &vet.LastName, &patronymic, &vet.Phone, &email,
 			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
-			&cityID2, &city.Name, &city.Region, &cityCreatedAt, // ИСПРАВЛЕНО: cityID2 вместо city.ID
+			&cityID2, &cityName, &cityRegion, &cityCreatedAt, // ИСПРАВЛЕНО: используем NullString
 		)
 		if err != nil {
 			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
@@ -373,9 +374,19 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 			vet.CityID = cityID
 			vet.Patronymic = patronymic
 
-			// ИСПРАВЛЕНО: используем cityID2 для установки ID города
+			// ИСПРАВЛЕНО: правильно заполняем город
 			if cityID2.Valid {
 				city.ID = int(cityID2.Int64)
+				if cityName.Valid {
+					city.Name = cityName.String
+				} else {
+					city.Name = "Не указан"
+				}
+				if cityRegion.Valid {
+					city.Region = cityRegion.String
+				} else {
+					city.Region = "Не указан"
+				}
 				if cityCreatedAt.Valid {
 					city.CreatedAt = cityCreatedAt.Time
 				}

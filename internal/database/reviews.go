@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
 
@@ -46,6 +47,10 @@ func (r *ReviewRepository) CreateReview(review *models.Review) error {
 
 // GetReviewByID возвращает отзыв по ID с полной информацией
 func (r *ReviewRepository) GetReviewByID(reviewID int) (*models.Review, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("review repository not initialized")
+	}
+
 	query := `
 		SELECT r.id, r.veterinarian_id, r.user_id, r.rating, r.comment, 
 		       r.status, r.created_at, r.moderated_at, r.moderated_by,
