@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"log"
 	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
@@ -22,6 +23,9 @@ func (r *ReviewRepository) CreateReview(review *models.Review) error {
 	query := `INSERT INTO reviews (veterinarian_id, user_id, rating, comment, status, created_at) 
               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
 
+	log.Printf("Creating review: vet_id=%d, user_id=%d, rating=%d, comment_length=%d",
+		review.VeterinarianID, review.UserID, review.Rating, len(review.Comment))
+
 	err := r.db.QueryRow(query,
 		review.VeterinarianID,
 		review.UserID,
@@ -31,7 +35,13 @@ func (r *ReviewRepository) CreateReview(review *models.Review) error {
 		review.CreatedAt,
 	).Scan(&review.ID)
 
-	return err
+	if err != nil {
+		log.Printf("Error creating review: %v", err)
+		return err
+	}
+
+	log.Printf("Review created successfully with ID: %d", review.ID)
+	return nil
 }
 
 // GetReviewByID возвращает отзыв по ID с полной информацией

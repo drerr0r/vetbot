@@ -50,13 +50,13 @@ func (d *Database) GetDB() *sql.DB {
 // CreateUser создает нового пользователя
 func (d *Database) CreateUser(user *models.User) error {
 	query := `INSERT INTO users (telegram_id, username, first_name, last_name, phone) 
-	          VALUES ($1, $2, $3, $4, $5) 
-	          ON CONFLICT (telegram_id) DO UPDATE SET 
-	          username = EXCLUDED.username, 
-	          first_name = EXCLUDED.first_name, 
-	          last_name = EXCLUDED.last_name, 
-	          phone = EXCLUDED.phone
-	          RETURNING id, created_at`
+              VALUES ($1, $2, $3, $4, $5) 
+              ON CONFLICT (telegram_id) DO UPDATE SET 
+              username = EXCLUDED.username, 
+              first_name = EXCLUDED.first_name, 
+              last_name = EXCLUDED.last_name, 
+              phone = EXCLUDED.phone
+              RETURNING id, created_at`
 
 	err := d.db.QueryRow(query, user.TelegramID, user.Username, user.FirstName, user.LastName, user.Phone).
 		Scan(&user.ID, &user.CreatedAt)

@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"html"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -126,12 +127,12 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 	h.bot.Request(callbackConfig)
 }
 
-// В HandleReviewComment добавьте дополнительное логирование перед сохранением:
+// В HandleReviewComment добавьте создание пользователя если его нет
 func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment string) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
-	InfoLog.Printf("HandleReviewComment: user %d submitted comment: %s", userID, comment)
+	log.Printf("HandleReviewComment: user %d submitted comment: %s", userID, comment)
 
 	// Проверяем длину комментария
 	if len(comment) > 500 {
@@ -143,7 +144,7 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	// Получаем сохраненные данные
 	vetID, ok := h.stateManager.GetUserDataInt(userID, "review_vet_id")
 	if !ok {
-		ErrorLog.Printf("HandleReviewComment: review_vet_id not found for user %d", userID)
+		log.Printf("HandleReviewComment: review_vet_id not found for user %d", userID)
 		h.sendErrorMessage(chatID, "Ошибка: данные о враче не найдены")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -151,35 +152,54 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 
 	rating, ok := h.stateManager.GetUserDataInt(userID, "review_rating")
 	if !ok {
-		ErrorLog.Printf("HandleReviewComment: review_rating not found for user %d", userID)
+		log.Printf("HandleReviewComment: review_rating not found for user %d", userID)
 		h.sendErrorMessage(chatID, "Ошибка: данные о рейтинге не найдены")
 		h.stateManager.ClearUserState(userID)
 		return
 	}
 
-	InfoLog.Printf("HandleReviewComment: user %d, vetID %d, rating %d, comment length %d",
+	log.Printf("HandleReviewComment: user %d, vetID %d, rating %d, comment length %d",
 		userID, vetID, rating, len(comment))
 
-	// Получаем ID пользователя из базы
+	// Получаем или создаем пользователя в базе
 	user, err := h.db.GetUserByTelegramID(userID)
 	if err != nil {
-		ErrorLog.Printf("HandleReviewComment: user not found in database: %v", err)
-		h.sendErrorMessage(chatID, "Ошибка: пользователь не найден")
-		h.stateManager.ClearUserState(userID)
-		return
+		log.Printf("HandleReviewComment: user not found, creating new user for telegram ID %d", userID)
+
+		// Создаем нового пользователя
+		newUser := &models.User{
+			TelegramID: userID,
+			FirstName:  update.Message.From.FirstName,
+			LastName:   update.Message.From.LastName,
+			Username:   update.Message.From.UserName,
+			CreatedAt:  time.Now(),
+		}
+
+		err = h.db.CreateUser(newUser)
+		if err != nil {
+			log.Printf("HandleReviewComment: error creating user: %v", err)
+			h.sendErrorMessage(chatID, "❌ Ошибка при создании пользователя")
+			h.stateManager.ClearUserState(userID)
+			return
+		}
+
+		user = newUser
+		log.Printf("HandleReviewComment: created new user with ID %d", user.ID)
+	} else {
+		log.Printf("HandleReviewComment: found existing user with ID %d", user.ID)
 	}
 
 	// Проверяем, не оставлял ли пользователь уже отзыв этому врачу
 	hasReview, err := h.db.HasUserReviewForVet(user.ID, vetID)
 	if err != nil {
-		ErrorLog.Printf("HandleReviewComment: error checking existing review: %v", err)
+		log.Printf("HandleReviewComment: error checking existing review: %v", err)
 		h.sendErrorMessage(chatID, "Ошибка проверки существующих отзывов")
 		h.stateManager.ClearUserState(userID)
 		return
 	}
 
 	if hasReview {
-		ErrorLog.Printf("HandleReviewComment: user %d already has review for vet %d", user.ID, vetID)
+		log.Printf("HandleReviewComment: user %d already has review for vet %d", user.ID, vetID)
 		h.sendErrorMessage(chatID, "❌ Вы уже оставляли отзыв этому врачу.")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -198,7 +218,7 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	// Сохраняем в базу
 	err = h.db.CreateReview(review)
 	if err != nil {
-		ErrorLog.Printf("HandleReviewComment: error saving review: %v", err)
+		log.Printf("HandleReviewComment: error saving review: %v", err)
 		h.sendErrorMessage(chatID, "❌ Ошибка при сохранении отзыва")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -208,7 +228,7 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
 
-	InfoLog.Printf("HandleReviewComment: review saved successfully for user %d, review ID: %d", userID, review.ID)
+	log.Printf("HandleReviewComment: review saved successfully for user %d, review ID: %d", userID, review.ID)
 
 	// Отправляем подтверждение
 	msg := tgbotapi.NewMessage(chatID,
