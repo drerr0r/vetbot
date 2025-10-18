@@ -213,6 +213,26 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	// Отладочная информация о состоянии
 	h.stateManager.DebugUserState(userID)
 
+	// ДОБАВИТЬ: Проверка на команды админки даже в состоянии модерации
+	if h.isAdmin(userID) {
+		adminCommands := []string{
+			"👥 Управление врачами", "➕ Добавить врача", "📋 Список врачей",
+			"📊 Статистика", "⭐ Модерация отзывов", "❌ Выйти из админки",
+			"🔙 Назад", "✏️ Редактировать имя", "👤 Редактировать фамилию",
+			"📞 Редактировать телефон", "📧 Редактировать email", "💼 Редактировать опыт",
+			"🏙️ Редактировать город", "📊 Изменить статус", "🎯 Редактировать специализации",
+			"🔙 Назад к списку", "🔙 Назад в админку",
+		}
+
+		for _, cmd := range adminCommands {
+			if text == cmd {
+				InfoLog.Printf("Redirecting admin command '%s' to admin handlers", text)
+				h.adminHandlers.HandleAdminMessage(update)
+				return
+			}
+		}
+	}
+
 	// Обработка состояний системы отзывов
 	switch state {
 	case "review_comment":
@@ -222,11 +242,8 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 
 	case "review_moderation":
 		InfoLog.Printf("Processing review moderation for user %d", userID)
-		if reviewID, err := strconv.Atoi(strings.TrimSpace(text)); err == nil {
-			h.reviewHandlers.HandleReviewModerationAction(update, reviewID)
-		} else {
-			h.sendErrorMessage(chatID, "Введите числовой ID отзыва")
-		}
+		// ИЗМЕНИТЬ: Вместо прямого парсинга ID, перенаправляем в ReviewHandlers
+		h.reviewHandlers.HandleReviewModerationInput(update)
 		return
 
 	case "review_moderation_confirm":

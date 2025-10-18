@@ -535,13 +535,33 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 
 	InfoLog.Printf("ReviewModerationInput: user %d, text: '%s'", userID, text)
 
-	// Проверяем кнопку "Назад"
-	if text == "🔙 Назад в админку" {
-		h.handleBackToAdmin(update)
+	// ПРОВЕРЯЕМ КОМАНДЫ АДМИНКИ ПЕРВЫМИ
+	adminCommands := map[string]func(){
+		"🔙 Назад в админку": func() { h.handleBackToAdmin(update) },
+		"👥 Управление врачами": func() {
+			h.stateManager.ClearUserState(userID)
+			h.stateManager.ClearUserData(userID)
+			h.handleBackToAdmin(update)
+		},
+		"📋 Список врачей": func() {
+			h.stateManager.ClearUserState(userID)
+			h.stateManager.ClearUserData(userID)
+			h.handleBackToAdmin(update)
+		},
+		"📊 Статистика": func() {
+			h.stateManager.ClearUserState(userID)
+			h.stateManager.ClearUserData(userID)
+			h.handleBackToAdmin(update)
+		},
+		"❌ Выйти из админки": func() { h.handleBackToAdmin(update) },
+	}
+
+	if handler, exists := adminCommands[text]; exists {
+		handler()
 		return
 	}
 
-	// Проверяем кнопки действий модерации
+	// Затем проверяем кнопки действий модерации
 	switch text {
 	case "✅ Одобрить отзыв":
 		// ПОЛУЧАЕМ ТЕКУЩИЙ ОТЗЫВ ИЗ СОСТОЯНИЯ
@@ -674,7 +694,6 @@ func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review 
 	h.bot.Send(msg)
 }
 
-// handleBackToAdmin возвращает пользователя в админское меню
 func (h *ReviewHandlers) handleBackToAdmin(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
@@ -683,18 +702,22 @@ func (h *ReviewHandlers) handleBackToAdmin(update tgbotapi.Update) {
 	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
 
-	// Используем adminHandlers для возврата в админку
-	msg := tgbotapi.NewMessage(chatID, "Возврат в админское меню...")
-	h.bot.Send(msg)
+	// Отправляем админское меню
+	adminMsg := tgbotapi.NewMessage(chatID, "🔧 Административная панель\n\nВыберите раздел для управления:")
 
-	// Вызываем HandleAdmin через небольшую задержку
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		// Нужно как-то вызвать HandleAdmin, но у нас нет доступа к adminHandlers
-		// Временно просто отправляем инструкцию
-		msg := tgbotapi.NewMessage(chatID, "Используйте /admin для открытия панели администратора.")
-		h.bot.Send(msg)
-	}()
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("👥 Управление врачами"),
+			tgbotapi.NewKeyboardButton("⭐ Модерация отзывов"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("📊 Статистика"),
+			tgbotapi.NewKeyboardButton("❌ Выйти из админки"),
+		),
+	)
+
+	adminMsg.ReplyMarkup = keyboard
+	h.bot.Send(adminMsg)
 }
 
 // approveReview одобряет отзыв
