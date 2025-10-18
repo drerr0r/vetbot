@@ -112,9 +112,8 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 		fmt.Sprintf("📝 *Добавление отзыва*\n\n✅ Оценка: %d/5 ⭐\n\nТеперь напишите ваш отзыв (максимум 500 символов):", rating))
 	editMsg.ParseMode = "Markdown"
 
-	// Убираем клавиатуру
-	emptyKeyboard := tgbotapi.NewInlineKeyboardMarkup()
-	editMsg.ReplyMarkup = &emptyKeyboard
+	// Убираем клавиатуру - передаем nil вместо указателя
+	editMsg.ReplyMarkup = nil
 
 	_, err := h.bot.Send(editMsg)
 	if err != nil {

@@ -1174,7 +1174,7 @@ func (h *VetHandlers) handleAddReviewCallback(callback *tgbotapi.CallbackQuery) 
 	vetID, err := strconv.Atoi(vetIDStr)
 	if err != nil {
 		ErrorLog.Printf("Error parsing vet ID: %v", err)
-		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "❌ Ошибка обработки запроса")
 		h.bot.Request(callbackConfig)
 		return
 	}
@@ -1184,11 +1184,11 @@ func (h *VetHandlers) handleAddReviewCallback(callback *tgbotapi.CallbackQuery) 
 		CallbackQuery: callback,
 	}
 
-	// Здесь нужно будет передать управление в ReviewHandlers
-	// Пока используем существующий функционал
+	// Передаем управление в ReviewHandlers
 	h.reviewHandlers.HandleAddReview(update, vetID)
 
-	callbackConfig := tgbotapi.NewCallback(callback.ID, "")
+	// Подтверждаем callback - убираем "часики" на кнопке
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "📝 Начинаем добавление отзыва...")
 	h.bot.Request(callbackConfig)
 }
 
