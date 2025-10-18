@@ -22,26 +22,30 @@ import (
 
 // MainHandler обрабатывает все входящие обновления
 type MainHandler struct {
-	bot            BotAPI   // Используем интерфейс
-	db             Database // Используем интерфейс
+	bot            BotAPI
+	db             Database
 	config         *utils.Config
+	stateManager   *StateManager
 	vetHandlers    *VetHandlers
 	adminHandlers  *AdminHandlers
 	reviewHandlers *ReviewHandlers
-	adminState     map[int64]string
 }
 
 // NewMainHandler создает новый экземпляр MainHandler
 func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler {
-	return &MainHandler{
-		bot:            bot,
-		db:             db,
-		config:         config,
-		vetHandlers:    NewVetHandlers(bot, db, config.AdminIDs), // Передаем adminIDs
-		adminHandlers:  NewAdminHandlers(bot, db, config),
-		reviewHandlers: NewReviewHandlers(bot, db, config.AdminIDs),
-		adminState:     make(map[int64]string),
+	stateManager := NewStateManager()
+
+	handler := &MainHandler{
+		bot:          bot,
+		db:           db,
+		config:       config,
+		stateManager: stateManager,
 	}
+
+	handler.vetHandlers = NewVetHandlers(bot, db, config.AdminIDs, stateManager)
+	handler.adminHandlers = NewAdminHandlers(bot, db, config, stateManager)
+	handler.reviewHandlers = NewReviewHandlers(bot, db, config.AdminIDs, stateManager)
+	return handler
 }
 
 // HandleUpdate обрабатывает входящее обновление от Telegram
@@ -176,7 +180,9 @@ func (h *MainHandler) handleSearchCommand(update tgbotapi.Update) {
 // handleTextMessage обрабатывает обычные текстовые сообщения
 func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	userID := update.Message.From.ID
-	state := h.adminState[userID]
+	state := h.stateManager.GetUserState(userID)
+
+	InfoLog.Printf("User %d state: %s", userID, state)
 
 	// Если пользователь в процессе добавления отзыва
 	if strings.HasPrefix(state, "review_") {
@@ -734,19 +740,21 @@ func (h *MainHandler) isAdmin(userID int64) bool {
 	return false
 }
 
-// isInAdminMode проверяет, находится ли пользователь в админском режиме
+// isInAdminMode проверяет, находится ли пользователь в режиме администратора
 func (h *MainHandler) isInAdminMode(userID int64) bool {
-	// Защита от nil указателя
+	// Защита от nil pointer
 	if h.adminHandlers == nil {
-		InfoLog.Printf("Admin handlers is nil for user %d", userID)
 		return false
 	}
 
-	// Проверяем состояние админской сессии
-	if state, exists := h.adminHandlers.adminState[userID]; exists {
-		return state != ""
+	// Проверяем права администратора
+	if !h.adminHandlers.IsAdmin(userID) {
+		return false
 	}
-	return false
+
+	// Проверяем, что пользователь активен в режиме админа
+	state := h.adminHandlers.adminState[userID]
+	return state != "" && state != "inactive"
 }
 
 // importCities и importClinics - временные заглушки
@@ -756,4 +764,9 @@ func (h *MainHandler) importCities(_ string, _ string) (string, error) {
 
 func (h *MainHandler) importClinics(_ string, _ string) (string, error) {
 	return "✅ Импорт клиник завершен!\n\nФункция импорта клиник в разработке", nil
+}
+
+// SetUserState устанавливает состояние пользователя через StateManager
+func (h *MainHandler) SetUserState(userID int64, state string) {
+	h.stateManager.SetUserState(userID, state)
 }

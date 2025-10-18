@@ -601,7 +601,8 @@ func CreateTestMainHandlers() (*MainHandler, *MockBot) {
 func CreateTestVetHandlers() (*VetHandlers, *MockBot, *MockDatabase) {
 	mockBot := NewMockBot()
 	mockDB := NewMockDatabase()
-	handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
+	stateManager := NewTestStateManager()
+	handlers := NewVetHandlers(mockBot, mockDB, []int64{12345}, stateManager)
 	return handlers, mockBot, mockDB
 }
 
@@ -610,7 +611,8 @@ func CreateTestAdminHandlers() (*AdminHandlers, *MockBot, *MockDatabase) {
 	mockBot := NewMockBot()
 	mockDB := NewMockDatabase()
 	config := CreateTestConfig()
-	handlers := NewAdminHandlers(mockBot, mockDB, config)
+	stateManager := NewTestStateManager()
+	handlers := NewAdminHandlers(mockBot, mockDB, config, stateManager)
 	return handlers, mockBot, mockDB
 }
 
@@ -979,7 +981,7 @@ func CreateRealTestMainHandlers() (*MainHandler, *MockBot) {
 	mockDB := NewMockDatabase()
 	config := CreateTestConfig()
 
-	// Создаем реальный MainHandler
+	// MainHandler создает StateManager сам, поэтому не передаем его
 	mainHandler := NewMainHandler(mockBot, mockDB, config)
 	return mainHandler, mockBot
 }
@@ -1070,4 +1072,85 @@ func SetupReviewMocks(mockDB *MockDatabase) {
 	mockDB.HasUserReviewForVetFunc = func(userID int, vetID int) (bool, error) {
 		return false, nil // Пользователь еще не оставлял отзыв
 	}
+}
+
+// ============================================================================
+// MOCK STATE MANAGER
+// ============================================================================
+
+// MockStateManager представляет мок для менеджера состояний
+type MockStateManager struct {
+	userStates map[int64]string
+	userData   map[int64]map[string]interface{}
+}
+
+// NewMockStateManager создает новый мок менеджера состояний
+func NewMockStateManager() *MockStateManager {
+	return &MockStateManager{
+		userStates: make(map[int64]string),
+		userData:   make(map[int64]map[string]interface{}),
+	}
+}
+
+// SetUserState устанавливает состояние пользователя
+func (m *MockStateManager) SetUserState(userID int64, state string) {
+	m.userStates[userID] = state
+}
+
+// GetUserState возвращает состояние пользователя
+func (m *MockStateManager) GetUserState(userID int64) string {
+	return m.userStates[userID]
+}
+
+// ClearUserState очищает состояние пользователя
+func (m *MockStateManager) ClearUserState(userID int64) {
+	delete(m.userStates, userID)
+	delete(m.userData, userID)
+}
+
+// SetUserData сохраняет данные пользователя
+func (m *MockStateManager) SetUserData(userID int64, key string, value interface{}) {
+	if m.userData[userID] == nil {
+		m.userData[userID] = make(map[string]interface{})
+	}
+	m.userData[userID][key] = value
+}
+
+// GetUserData возвращает данные пользователя
+func (m *MockStateManager) GetUserData(userID int64, key string) interface{} {
+	if userData, exists := m.userData[userID]; exists {
+		return userData[key]
+	}
+	return nil
+}
+
+// GetUserDataInt возвращает данные пользователя как int
+func (m *MockStateManager) GetUserDataInt(userID int64, key string) (int, bool) {
+	value := m.GetUserData(userID, key)
+	if value == nil {
+		return 0, false
+	}
+
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+// ClearUserData очищает все данные пользователя
+func (m *MockStateManager) ClearUserData(userID int64) {
+	delete(m.userData, userID)
+}
+
+// ============================================================================
+// TEST STATE MANAGER
+// ============================================================================
+
+// NewTestStateManager создает StateManager для тестов
+func NewTestStateManager() *StateManager {
+	return NewStateManager()
 }

@@ -37,6 +37,7 @@ COPY --from=builder /app/scripts ./scripts
 
 # Даем права на выполнение скриптов ДО смены пользователя
 RUN chmod +x scripts/apply_migrations_railway.sh
+RUN chmod +x scripts/apply_migrations.sh
 
 # Создаем пустую папку static если нужно
 RUN mkdir -p static

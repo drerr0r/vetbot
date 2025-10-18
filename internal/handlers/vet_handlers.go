@@ -14,15 +14,17 @@ import (
 type VetHandlers struct {
 	bot            BotAPI
 	db             Database
+	stateManager   *StateManager
 	reviewHandlers *ReviewHandlers
 }
 
 // NewVetHandlers создает новый экземпляр VetHandlers
-func NewVetHandlers(bot BotAPI, db Database, adminIDs []int64) *VetHandlers {
+func NewVetHandlers(bot BotAPI, db Database, adminIDs []int64, stateManager *StateManager) *VetHandlers {
 	return &VetHandlers{
 		bot:            bot,
 		db:             db,
-		reviewHandlers: NewReviewHandlers(bot, db, adminIDs),
+		stateManager:   stateManager,
+		reviewHandlers: NewReviewHandlers(bot, db, adminIDs, stateManager),
 	}
 }
 

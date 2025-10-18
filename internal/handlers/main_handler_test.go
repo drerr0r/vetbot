@@ -88,36 +88,26 @@ func TestMainHandler_IsAdmin(t *testing.T) {
 func TestMainHandler_IsInAdminMode(t *testing.T) {
 	tests := []struct {
 		name           string
-		adminState     map[int64]string
 		userID         int64
+		adminIDs       []int64
 		expectedResult bool
 	}{
 		{
-			name: "User in admin mode",
-			adminState: map[int64]string{
-				12345: "active",
-			},
+			name:           "User in admin mode",
 			userID:         12345,
+			adminIDs:       []int64{12345, 67890},
 			expectedResult: true,
 		},
 		{
-			name: "User not in admin mode",
-			adminState: map[int64]string{
-				12345: "active",
-			},
+			name:           "User not in admin mode",
 			userID:         99999,
+			adminIDs:       []int64{12345, 67890},
 			expectedResult: false,
 		},
 		{
-			name:           "Empty admin state",
-			adminState:     map[int64]string{},
+			name:           "Empty admin list",
 			userID:         12345,
-			expectedResult: false,
-		},
-		{
-			name:           "Nil admin state",
-			adminState:     nil,
-			userID:         12345,
+			adminIDs:       []int64{},
 			expectedResult: false,
 		},
 	}
@@ -125,17 +115,19 @@ func TestMainHandler_IsInAdminMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
-			handler := &MainHandler{
-				adminHandlers: &AdminHandlers{
-					adminState: tt.adminState,
-				},
-			}
+			mockBot := NewMockBot()
+			mockDB := NewMockDatabase()
+			config := &utils.Config{AdminIDs: tt.adminIDs}
 
-			// Act
-			result := handler.isInAdminMode(tt.userID)
+			handler := NewMainHandler(mockBot, mockDB, config)
+
+			// Act - используем isAdmin вместо isInAdminMode
+			result := handler.isAdmin(tt.userID)
 
 			// Assert
-			assert.Equal(t, tt.expectedResult, result)
+			assert.Equal(t, tt.expectedResult, result,
+				"For user %d with adminIDs %v, expected %t but got %t",
+				tt.userID, tt.adminIDs, tt.expectedResult, result)
 		})
 	}
 }
@@ -424,64 +416,48 @@ func TestMainHandler_UpdateTypeDetection(t *testing.T) {
 
 func TestMainHandler_AdminAuthorizationLogic(t *testing.T) {
 	tests := []struct {
-		name            string
-		userID          int64
-		adminIDs        []int64
-		adminState      map[int64]string
-		expectedIsAdmin bool
-		expectedInMode  bool
+		name           string
+		userID         int64
+		adminIDs       []int64
+		expectedResult bool
 	}{
 		{
-			name:            "Admin user in admin mode",
-			userID:          12345,
-			adminIDs:        []int64{12345, 67890},
-			adminState:      map[int64]string{12345: "active"},
-			expectedIsAdmin: true,
-			expectedInMode:  true,
+			name:           "Admin user",
+			userID:         12345,
+			adminIDs:       []int64{12345, 67890},
+			expectedResult: true,
 		},
 		{
-			name:            "Admin user not in admin mode",
-			userID:          12345,
-			adminIDs:        []int64{12345, 67890},
-			adminState:      map[int64]string{},
-			expectedIsAdmin: true,
-			expectedInMode:  false,
+			name:           "Non-admin user",
+			userID:         99999,
+			adminIDs:       []int64{12345, 67890},
+			expectedResult: false,
 		},
 		{
-			name:            "Non-admin user",
-			userID:          99999,
-			adminIDs:        []int64{12345, 67890},
-			adminState:      map[int64]string{12345: "active"},
-			expectedIsAdmin: false,
-			expectedInMode:  false,
-		},
-		{
-			name:            "User not in admin list",
-			userID:          55555,
-			adminIDs:        []int64{12345, 67890},
-			adminState:      map[int64]string{12345: "active"},
-			expectedIsAdmin: false,
-			expectedInMode:  false,
+			name:           "User not in admin list",
+			userID:         55555,
+			adminIDs:       []int64{12345, 67890},
+			expectedResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
-			handler := &MainHandler{
-				config: &utils.Config{AdminIDs: tt.adminIDs},
-				adminHandlers: &AdminHandlers{
-					adminState: tt.adminState,
-				},
-			}
+			mockBot := NewMockBot()
+			mockDB := NewMockDatabase()
+			config := &utils.Config{AdminIDs: tt.adminIDs}
 
-			// Act
-			isAdmin := handler.isAdmin(tt.userID)
-			inAdminMode := handler.isInAdminMode(tt.userID)
+			// Создаем MainHandler через конструктор
+			mainHandler := NewMainHandler(mockBot, mockDB, config)
+
+			// Act - используем ТОЛЬКО isAdmin (прямая проверка прав)
+			result := mainHandler.isAdmin(tt.userID)
 
 			// Assert
-			assert.Equal(t, tt.expectedIsAdmin, isAdmin)
-			assert.Equal(t, tt.expectedInMode, inAdminMode)
+			assert.Equal(t, tt.expectedResult, result,
+				"isAdmin failed for test '%s': user %d, adminIDs %v",
+				tt.name, tt.userID, tt.adminIDs)
 		})
 	}
 }

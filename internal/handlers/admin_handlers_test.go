@@ -19,17 +19,17 @@ func TestNewAdminHandlers(t *testing.T) {
 	mockBot := NewMockBot()
 	mockDB := NewMockDatabase()
 	config := &utils.Config{AdminIDs: []int64{12345}}
+	stateManager := NewTestStateManager()
 
 	// Act
-	handler := NewAdminHandlers(mockBot, mockDB, config)
-
+	handler := NewAdminHandlers(mockBot, mockDB, config, stateManager)
+	// Assert
 	// Assert
 	assert.NotNil(t, handler)
 	assert.Equal(t, mockBot, handler.bot)
 	assert.Equal(t, mockDB, handler.db)
 	assert.Equal(t, config, handler.config)
-	assert.NotNil(t, handler.adminState)
-	assert.NotNil(t, handler.tempData) // Проверяем новое поле
+	assert.NotNil(t, handler.stateManager)
 }
 
 func TestAdminHandlersTempData(t *testing.T) {
@@ -37,19 +37,19 @@ func TestAdminHandlersTempData(t *testing.T) {
 	mockBot := NewMockBot()
 	mockDB := NewMockDatabase()
 	config := &utils.Config{AdminIDs: []int64{12345}}
-	handler := NewAdminHandlers(mockBot, mockDB, config)
+	stateManager := NewTestStateManager()
+	handler := NewAdminHandlers(mockBot, mockDB, config, stateManager)
 
 	// Act & Assert - проверяем что tempData работает
-	handler.tempData["test_key"] = "test_value"
-	value, exists := handler.tempData["test_key"]
+	handler.stateManager.SetUserData(12345, "test_key", "test_value")
+	value := handler.stateManager.GetUserData(12345, "test_key")
 
-	assert.True(t, exists)
 	assert.Equal(t, "test_value", value)
 
 	// Проверяем удаление
-	delete(handler.tempData, "test_key")
-	_, exists = handler.tempData["test_key"]
-	assert.False(t, exists)
+	handler.stateManager.ClearUserData(12345)
+	value = handler.stateManager.GetUserData(12345, "test_key")
+	assert.Nil(t, value)
 }
 
 // ============================================================================

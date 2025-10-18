@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"html"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,36 +12,31 @@ import (
 
 // ReviewHandlers содержит обработчики для системы отзывов
 type ReviewHandlers struct {
-	bot        BotAPI
-	db         Database
-	adminIDs   []int64
-	adminState map[int64]string
-	tempData   map[string]interface{}
+	bot          BotAPI
+	db           Database
+	adminIDs     []int64
+	stateManager *StateManager
 }
 
 // NewReviewHandlers создает новый экземпляр ReviewHandlers
-func NewReviewHandlers(bot BotAPI, db Database, adminIDs []int64) *ReviewHandlers {
+func NewReviewHandlers(bot BotAPI, db Database, adminIDs []int64, stateManager *StateManager) *ReviewHandlers {
 	return &ReviewHandlers{
-		bot:        bot,
-		db:         db,
-		adminIDs:   adminIDs,
-		adminState: make(map[int64]string),
-		tempData:   make(map[string]interface{}),
+		bot:          bot,
+		db:           db,
+		adminIDs:     adminIDs,
+		stateManager: stateManager,
 	}
 }
 
 // HandleReviewCancel обрабатывает отмену добавления отзыва
 func (h *ReviewHandlers) HandleReviewCancel(update tgbotapi.Update) {
-	chatID := update.CallbackQuery.Message.Chat.ID
 	userID := update.CallbackQuery.From.ID
 
-	// Очищаем временные данные
-	userIDStr := strconv.FormatInt(userID, 10)
-	delete(h.tempData, userIDStr+"_review_vet")
-	delete(h.tempData, userIDStr+"_review_rating")
-	delete(h.adminState, userID)
+	// Очищаем состояние и данные
+	h.stateManager.ClearUserState(userID)
+	h.stateManager.ClearUserData(userID)
 
-	msg := tgbotapi.NewMessage(chatID, "❌ Добавление отзыва отменено.")
+	msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "❌ Добавление отзыва отменено.")
 	h.bot.Send(msg)
 
 	// Отвечаем на callback
@@ -52,16 +46,15 @@ func (h *ReviewHandlers) HandleReviewCancel(update tgbotapi.Update) {
 
 // HandleAddReview начинает процесс добавления отзыва
 func (h *ReviewHandlers) HandleAddReview(update tgbotapi.Update, vetID int) {
-	// Проверяем наличие CallbackQuery и Message
 	if update.CallbackQuery == nil || update.CallbackQuery.Message == nil {
 		ErrorLog.Printf("HandleAddReview: CallbackQuery or Message is nil")
 		return
 	}
 
 	chatID := update.CallbackQuery.Message.Chat.ID
+	userID := update.CallbackQuery.From.ID
 
 	// Проверяем, оставлял ли пользователь уже отзыв этому врачу
-	userID := update.CallbackQuery.From.ID
 	hasReview, err := h.db.HasUserReviewForVet(int(userID), vetID)
 	if err != nil {
 		h.sendErrorMessage(chatID, "Ошибка проверки отзывов")
@@ -76,9 +69,8 @@ func (h *ReviewHandlers) HandleAddReview(update tgbotapi.Update, vetID int) {
 	}
 
 	// Сохраняем данные для процесса добавления отзыва
-	userIDStr := strconv.FormatInt(userID, 10)
-	h.tempData[userIDStr+"_review_vet"] = vetID
-	h.adminState[userID] = "review_rating"
+	h.stateManager.SetUserData(userID, "review_vet_id", vetID)
+	h.stateManager.SetUserState(userID, "review_rating")
 
 	// Показываем выбор рейтинга
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -107,10 +99,9 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 	chatID := callback.Message.Chat.ID
 	userID := callback.From.ID
 
-	// Сохраняем рейтинг
-	userIDStr := strconv.FormatInt(userID, 10)
-	h.tempData[userIDStr+"_review_rating"] = rating
-	h.adminState[userID] = "review_comment"
+	// Сохраняем рейтинг и переходим к следующему шагу
+	h.stateManager.SetUserData(userID, "review_rating", rating)
+	h.stateManager.SetUserState(userID, "review_comment")
 
 	// Обновляем сообщение
 	editMsg := tgbotapi.NewEditMessageText(chatID, callback.Message.MessageID,
@@ -124,7 +115,7 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 	h.bot.Send(editMsg)
 
 	// Отвечаем на callback
-	callbackConfig := tgbotapi.NewCallback(callback.ID, "")
+	callbackConfig := tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Выбрано %d звезд", rating))
 	h.bot.Request(callbackConfig)
 }
 
@@ -132,7 +123,6 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment string) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
-	userIDStr := strconv.FormatInt(userID, 10)
 
 	// Проверяем длину комментария
 	if len(comment) > 500 {
@@ -142,15 +132,17 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	}
 
 	// Получаем сохраненные данные
-	vetID, ok := h.tempData[userIDStr+"_review_vet"].(int)
+	vetID, ok := h.stateManager.GetUserDataInt(userID, "review_vet_id")
 	if !ok {
 		h.sendErrorMessage(chatID, "Ошибка: данные о враче не найдены")
+		h.stateManager.ClearUserState(userID)
 		return
 	}
 
-	rating, ok := h.tempData[userIDStr+"_review_rating"].(int)
+	rating, ok := h.stateManager.GetUserDataInt(userID, "review_rating")
 	if !ok {
 		h.sendErrorMessage(chatID, "Ошибка: данные о рейтинге не найдены")
+		h.stateManager.ClearUserState(userID)
 		return
 	}
 
@@ -158,6 +150,7 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	user, err := h.db.GetUserByTelegramID(userID)
 	if err != nil {
 		h.sendErrorMessage(chatID, "Ошибка: пользователь не найден")
+		h.stateManager.ClearUserState(userID)
 		return
 	}
 
@@ -175,13 +168,13 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	err = h.db.CreateReview(review)
 	if err != nil {
 		h.sendErrorMessage(chatID, "Ошибка при сохранении отзыва")
+		h.stateManager.ClearUserState(userID)
 		return
 	}
 
-	// Очищаем временные данные
-	delete(h.tempData, userIDStr+"_review_vet")
-	delete(h.tempData, userIDStr+"_review_rating")
-	delete(h.adminState, userID)
+	// Очищаем состояние и данные
+	h.stateManager.ClearUserState(userID)
+	h.stateManager.ClearUserData(userID)
 
 	// Отправляем подтверждение
 	msg := tgbotapi.NewMessage(chatID,
@@ -283,9 +276,8 @@ func (h *ReviewHandlers) HandleReviewModeration(update tgbotapi.Update) {
 	}
 
 	// Сохраняем список отзывов для модерации
-	userIDStr := strconv.FormatInt(userID, 10)
-	h.tempData[userIDStr+"_pending_reviews"] = pendingReviews
-	h.adminState[userID] = "review_moderation"
+	h.stateManager.SetUserData(userID, "pending_reviews", pendingReviews)
+	h.stateManager.SetUserState(userID, "review_moderation")
 
 	var message strings.Builder
 	message.WriteString("⚡ *Модерация отзывов*\n\n")
@@ -336,9 +328,8 @@ func (h *ReviewHandlers) HandleReviewModerationAction(update tgbotapi.Update, re
 	}
 
 	// Сохраняем данные для подтверждения
-	userIDStr := strconv.FormatInt(userID, 10)
-	h.tempData[userIDStr+"_moderation_review"] = review
-	h.adminState[userID] = "review_moderation_confirm"
+	h.stateManager.SetUserData(userID, "moderation_review", review)
+	h.stateManager.SetUserState(userID, "review_moderation_confirm")
 
 	var message strings.Builder
 	message.WriteString("⚡ *Модерация отзыва*\n\n")
@@ -374,10 +365,10 @@ func (h *ReviewHandlers) HandleReviewModerationAction(update tgbotapi.Update, re
 func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, action string) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
-	userIDStr := strconv.FormatInt(userID, 10)
 
 	// Получаем данные отзыва
-	review, ok := h.tempData[userIDStr+"_moderation_review"].(*models.Review)
+	reviewInterface := h.stateManager.GetUserData(userID, "moderation_review")
+	review, ok := reviewInterface.(*models.Review)
 	if !ok {
 		h.sendErrorMessage(chatID, "Ошибка: данные отзыва не найдены")
 		return
@@ -413,8 +404,8 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 	}
 
 	// Очищаем временные данные
-	delete(h.tempData, userIDStr+"_moderation_review")
-	h.adminState[userID] = "review_moderation"
+	h.stateManager.ClearUserData(userID)
+	h.stateManager.SetUserState(userID, "review_moderation")
 
 	// Отправляем подтверждение
 	msg := tgbotapi.NewMessage(chatID, message)

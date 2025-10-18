@@ -26,23 +26,23 @@ var (
 
 // AdminHandlers содержит обработчики для административных функций
 type AdminHandlers struct {
-	bot            BotAPI   // Используем интерфейс
-	db             Database // Используем интерфейс
-	config         *utils.Config
-	adminState     map[int64]string
-	tempData       map[string]interface{}
-	reviewHandlers *ReviewHandlers
+	bot          BotAPI
+	db           Database
+	config       *utils.Config
+	stateManager *StateManager
+	adminState   map[int64]string
+	tempData     map[string]interface{}
 }
 
 // NewAdminHandlers создает новый экземпляр AdminHandlers
-func NewAdminHandlers(bot BotAPI, db Database, config *utils.Config) *AdminHandlers {
+func NewAdminHandlers(bot BotAPI, db Database, config *utils.Config, stateManager *StateManager) *AdminHandlers {
 	return &AdminHandlers{
-		bot:            bot,
-		db:             db,
-		config:         config,
-		adminState:     make(map[int64]string),
-		tempData:       make(map[string]interface{}),
-		reviewHandlers: NewReviewHandlers(bot, db, config.AdminIDs),
+		bot:          bot,
+		db:           db,
+		config:       config,
+		stateManager: stateManager,
+		adminState:   make(map[int64]string),
+		tempData:     make(map[string]interface{}),
 	}
 }
 
@@ -57,7 +57,7 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 			tgbotapi.NewKeyboardButton("🏥 Управление клиниками"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("🏙️ Управление городами"), // ДОБАВИТЬ ЭТУ КНОПКУ
+			tgbotapi.NewKeyboardButton("🏙️ Управление городами"),
 			tgbotapi.NewKeyboardButton("📥 Импорт данных"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
@@ -124,7 +124,7 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleVetEditField(update, text)
 	case "vet_edit_specializations":
 		h.handleVetEditSpecializations(update, text)
-	case "vet_edit_city": // !!!
+	case "vet_edit_city":
 		h.handleVetEditCity(update, text)
 	case "vet_confirm_delete":
 		h.handleVetConfirmDelete(update, text)
@@ -154,8 +154,8 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleCityEditRegion(update, text)
 	case "city_confirm_delete":
 		h.handleCityConfirmDelete(update, text)
-	case "city_search_region": // ← ТОЛЬКО ОДИН РАЗ
-		h.handleCitySearchRegion(update, text) // Исправлено: вызываем handleCitySearchRegion вместо startSearchByRegion
+	case "city_search_region":
+		h.handleCitySearchRegion(update, text)
 	default:
 		h.handleMainMenu(update, text)
 	}
@@ -195,12 +195,10 @@ func (h *AdminHandlers) handleBackButton(update tgbotapi.Update) {
 
 	// Определяем текущее состояние и возвращаемся на уровень выше
 	switch currentState {
-
 	case "vet_management", "clinic_management", "city_management", "import_menu":
 		h.adminState[userID] = "main_menu"
 		h.HandleAdmin(update)
 	case "vet_list", "vet_edit_menu", "vet_edit_field", "vet_edit_specializations",
-		// ДОБАВИТЬ ЭТИ СОСТОЯНИЯ ↓
 		"vet_edit_city", "vet_confirm_delete", "vet_toggle_active":
 		h.adminState[userID] = "vet_management"
 		h.showVetManagement(update)
@@ -208,7 +206,6 @@ func (h *AdminHandlers) handleBackButton(update tgbotapi.Update) {
 		h.adminState[userID] = "clinic_management"
 		h.showClinicManagement(update)
 	case "city_list", "city_edit_menu", "city_edit_name", "city_edit_region",
-		// ДОБАВИТЬ ЭТО СОСТОЯНИЕ ↓
 		"city_search_region", "city_confirm_delete":
 		h.adminState[userID] = "city_management"
 		h.showCityManagement(update)
@@ -248,7 +245,7 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showVetManagement(update)
 	case "🏥 Управление клиниками":
 		h.showClinicManagement(update)
-	case "🏙️ Управление городами": // ДОБАВИТЬ ЭТОТ CASE
+	case "🏙️ Управление городами":
 		h.showCityManagement(update)
 	case "📥 Импорт данных":
 		h.showImportMenu(update)
@@ -258,7 +255,6 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 		h.showSettings(update)
 	case "❌ Выйти из админки":
 		h.closeAdmin(update)
-
 	default:
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 			"Используйте кнопки админской панели")
@@ -378,7 +374,7 @@ func (h *AdminHandlers) handleVetManagement(update tgbotapi.Update, text string)
 // handleVetSearchByCity обрабатывает поиск врачей по городу
 func (h *AdminHandlers) handleVetSearchByCity(update tgbotapi.Update) {
 	userID := update.Message.From.ID
-	h.adminState[userID] = "vet_search_city" // Устанавливаем состояние
+	h.adminState[userID] = "vet_search_city"
 
 	cities, err := h.db.GetAllCities()
 	if err != nil {
@@ -632,7 +628,7 @@ func (h *AdminHandlers) handleAddVetSpecializations(update tgbotapi.Update, spec
 	// Создаем врача
 	vet := &models.Veterinarian{
 		FirstName: name,
-		LastName:  "", // Можно добавить поле для фамилии
+		LastName:  "",
 		Phone:     phone,
 		IsActive:  true,
 	}
@@ -1589,7 +1585,6 @@ func (h *AdminHandlers) getMaxSpecializationID() (int, error) {
 	return maxID, err
 }
 
-// addVeterinarian добавляет врача в базу данных
 // addVeterinarian добавляет врача в базу данных
 func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText string) error {
 	// Добавляем врача в базу через метод базы данных
@@ -2886,11 +2881,31 @@ func (h *AdminHandlers) importClinics(update tgbotapi.Update, _ io.Reader, _ str
 	h.bot.Send(msg)
 }
 
+// IsAdmin проверяет, является ли пользователь администратором
 func (h *AdminHandlers) IsAdmin(userID int64) bool {
-	_, exists := h.adminState[userID]
-	return exists
-}
+	// Защита от nil pointer
+	if h == nil {
+		log.Printf("DEBUG: AdminHandlers is nil for user %d", userID)
+		return false
+	}
+	if h.config == nil {
+		log.Printf("DEBUG: config is nil for user %d", userID)
+		return false
+	}
+	if h.config.AdminIDs == nil {
+		log.Printf("DEBUG: AdminIDs is nil for user %d", userID)
+		return false
+	}
 
-func (h *AdminHandlers) GetAdminState(userID int64) string {
-	return h.adminState[userID]
+	log.Printf("DEBUG: Checking admin for user %d, AdminIDs: %v", userID, h.config.AdminIDs)
+
+	for _, adminID := range h.config.AdminIDs {
+		if adminID == userID {
+			log.Printf("DEBUG: User %d found in admin list", userID)
+			return true
+		}
+	}
+
+	log.Printf("DEBUG: User %d not found in admin list: %v", userID, h.config.AdminIDs)
+	return false
 }
