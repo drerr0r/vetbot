@@ -851,3 +851,34 @@ func (h *MainHandler) handleDebugCommand(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
 }
+
+// HandleReviewCallback обрабатывает callback от inline кнопок отзывов
+func (h *ReviewHandlers) HandleReviewCallback(update tgbotapi.Update) {
+	callback := update.CallbackQuery
+	data := callback.Data
+	chatID := callback.Message.Chat.ID
+
+	InfoLog.Printf("HandleReviewCallback: %s", data)
+
+	if strings.HasPrefix(data, "review_rate_") {
+		ratingStr := strings.TrimPrefix(data, "review_rate_")
+		rating, err := strconv.Atoi(ratingStr)
+		if err == nil && rating >= 1 && rating <= 5 {
+			h.HandleReviewRating(update, rating)
+		} else {
+			h.sendErrorMessage(chatID, "Неверный рейтинг")
+		}
+	} else if data == "review_cancel" {
+		h.HandleReviewCancel(update)
+	} else if strings.HasPrefix(data, "add_review_") {
+		vetIDStr := strings.TrimPrefix(data, "add_review_")
+		vetID, err := strconv.Atoi(vetIDStr)
+		if err == nil {
+			h.HandleAddReview(update, vetID)
+		} else {
+			h.sendErrorMessage(chatID, "Ошибка при обработке запроса")
+		}
+	} else {
+		h.sendErrorMessage(chatID, "Неизвестная команда отзыва")
+	}
+}

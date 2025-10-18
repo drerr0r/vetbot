@@ -504,8 +504,6 @@ func (h *ReviewHandlers) sendErrorMessage(chatID int64, message string) {
 	h.bot.Send(msg)
 }
 
-// HandleReviewModerationInput обрабатывает текстовый ввод при модерации отзывов
-// HandleReviewModerationInput обрабатывает текстовый ввод при модерации отзывов
 func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
@@ -528,7 +526,13 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 		h.HandleReviewModerationConfirm(update, "❌ Отклонить отзыв")
 		return
 	case "🔙 Назад к списку":
-		h.HandleReviewModeration(update)
+		// Если нет отзывов, возвращаем в админку
+		pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
+		if pendingReviewsInterface == nil {
+			h.handleBackToAdmin(update)
+		} else {
+			h.HandleReviewModeration(update)
+		}
 		return
 	}
 
@@ -582,7 +586,7 @@ func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review 
 
 	if review.Veterinarian != nil {
 		message.WriteString(fmt.Sprintf("👨‍⚕️ *%s %s*\n",
-			html.EscapeString(review.Veterinarian.FirstName),
+			html.EscapeString(review.Veterinarian.FirstName), // ← ЗАПЯТАЯ ДОБАВЛЕНА
 			html.EscapeString(review.Veterinarian.LastName)))
 	}
 
@@ -614,37 +618,6 @@ func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review 
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 	h.bot.Send(msg)
-}
-
-// HandleReviewCallback обрабатывает callback от inline кнопок отзывов
-func (h *ReviewHandlers) HandleReviewCallback(update tgbotapi.Update) {
-	callback := update.CallbackQuery
-	data := callback.Data
-	chatID := callback.Message.Chat.ID
-
-	InfoLog.Printf("HandleReviewCallback: %s", data)
-
-	if strings.HasPrefix(data, "review_rate_") {
-		ratingStr := strings.TrimPrefix(data, "review_rate_")
-		rating, err := strconv.Atoi(ratingStr)
-		if err == nil && rating >= 1 && rating <= 5 {
-			h.HandleReviewRating(update, rating)
-		} else {
-			h.sendErrorMessage(chatID, "Неверный рейтинг")
-		}
-	} else if data == "review_cancel" {
-		h.HandleReviewCancel(update)
-	} else if strings.HasPrefix(data, "add_review_") {
-		vetIDStr := strings.TrimPrefix(data, "add_review_")
-		vetID, err := strconv.Atoi(vetIDStr)
-		if err == nil {
-			h.HandleAddReview(update, vetID)
-		} else {
-			h.sendErrorMessage(chatID, "Ошибка при обработке запроса")
-		}
-	} else {
-		h.sendErrorMessage(chatID, "Неизвестная команда отзыва")
-	}
 }
 
 // handleBackToAdmin возвращает пользователя в админское меню
