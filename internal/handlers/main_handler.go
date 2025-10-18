@@ -31,7 +31,6 @@ type MainHandler struct {
 	reviewHandlers *ReviewHandlers
 }
 
-// NewMainHandler создает новый экземпляр MainHandler
 func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler {
 	stateManager := NewStateManager()
 
@@ -50,7 +49,7 @@ func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler 
 		config:         config,
 		stateManager:   stateManager,
 		vetHandlers:    vetHandlers,
-		adminHandlers:  adminHandlers, // Теперь эта переменная используется
+		adminHandlers:  adminHandlers,
 		reviewHandlers: reviewHandlers,
 	}
 }
@@ -62,6 +61,15 @@ func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	// Обрабатываем callback queries (нажатия на inline кнопки)
 	if update.CallbackQuery != nil {
 		InfoLog.Printf("Callback query: %s", update.CallbackQuery.Data)
+
+		// Сначала пробуем обработать как callback от отзывов
+		data := update.CallbackQuery.Data
+		if strings.HasPrefix(data, "review_") || strings.HasPrefix(data, "add_review_") {
+			h.reviewHandlers.HandleReviewCallback(update)
+			return
+		}
+
+		// Иначе передаем в vetHandlers
 		h.vetHandlers.HandleCallback(update)
 		return
 	}

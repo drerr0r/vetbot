@@ -18,6 +18,7 @@ type ReviewHandlers struct {
 	db           Database
 	adminIDs     []int64
 	stateManager *StateManager
+	mainHandler  *MainHandler
 }
 
 // NewReviewHandlers создает новый экземпляр ReviewHandlers
@@ -505,13 +506,21 @@ func (h *ReviewHandlers) sendErrorMessage(chatID int64, message string) {
 }
 
 // HandleReviewModerationInput обрабатывает текстовый ввод при модерации отзывов
+// HandleReviewModerationInput обрабатывает текстовый ввод при модерации отзывов
 func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
 	text := strings.TrimSpace(update.Message.Text)
 
 	InfoLog.Printf("ReviewModerationInput: user %d, text: '%s'", userID, text)
 
-	// Проверяем кнопки действий
+	// Проверяем кнопку "Назад"
+	if text == "🔙 Назад в админку" {
+		h.handleBackToAdmin(update)
+		return
+	}
+
+	// Проверяем кнопки действий модерации
 	switch text {
 	case "✅ Одобрить отзыв":
 		h.HandleReviewModerationConfirm(update, "✅ Одобрить отзыв")
@@ -527,24 +536,130 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 	// Если не кнопка, пытаемся распарсить ID отзыва
 	reviewID, err := strconv.Atoi(text)
 	if err != nil {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-			"❌ Неверный формат ID отзыва. Введите числовой ID отзыва.")
+		msg := tgbotapi.NewMessage(chatID,
+			"❌ Неверный формат ID отзыва. Введите числовой ID отзыва из списка выше.")
 		h.bot.Send(msg)
 		return
 	}
 
-	// Получаем отзыв по ID (проверяем существование)
-	_, err = h.db.GetReviewByID(reviewID)
-	if err != nil {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-			fmt.Sprintf("❌ Отзыв с ID %d не найден.", reviewID))
+	// Получаем список ожидающих отзывов из временных данных
+	pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
+	if pendingReviewsInterface == nil {
+		msg := tgbotapi.NewMessage(chatID, "❌ Данные о отзывах не найдены. Начните модерацию заново.")
 		h.bot.Send(msg)
-		h.HandleReviewModeration(update) // Показываем список снова
+		h.HandleReviewModeration(update)
+		return
+	}
+
+	pendingReviews := pendingReviewsInterface.([]*models.Review)
+
+	// Ищем отзыв с указанным ID в списке ожидающих
+	var foundReview *models.Review
+	for _, review := range pendingReviews {
+		if review.ID == reviewID {
+			foundReview = review
+			break
+		}
+	}
+
+	if foundReview == nil {
+		msg := tgbotapi.NewMessage(chatID,
+			fmt.Sprintf("❌ Отзыв с ID %d не найден в списке ожидающих модерации.", reviewID))
+		h.bot.Send(msg)
 		return
 	}
 
 	// Показываем детали отзыва и кнопки действий
-	h.HandleReviewModerationAction(update, reviewID)
+	h.showReviewForModeration(update, foundReview)
+}
+
+// showReviewForModeration показывает отзыв с кнопками одобрить/отклонить
+func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review *models.Review) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	var message strings.Builder
+	message.WriteString("📝 *Отзыв для модерации*\n\n")
+
+	if review.Veterinarian != nil {
+		message.WriteString(fmt.Sprintf("👨‍⚕️ *%s %s*\n",
+			html.EscapeString(review.Veterinarian.FirstName),
+			html.EscapeString(review.Veterinarian.LastName)))
+	}
+
+	message.WriteString(fmt.Sprintf("⭐ Оценка: %d/5\n", review.Rating))
+	message.WriteString(fmt.Sprintf("💬 Отзыв: %s\n", html.EscapeString(review.Comment)))
+
+	if review.User != nil {
+		message.WriteString(fmt.Sprintf("👤 Пользователь: %s\n", html.EscapeString(review.User.FirstName)))
+	}
+
+	message.WriteString(fmt.Sprintf("📅 Дата: %s\n", review.CreatedAt.Format("02.01.2006")))
+	message.WriteString(fmt.Sprintf("🆔 ID отзыва: %d\n\n", review.ID))
+	message.WriteString("Выберите действие:")
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("✅ Одобрить отзыв"),
+			tgbotapi.NewKeyboardButton("❌ Отклонить отзыв"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад к списку"),
+		),
+	)
+
+	// Сохраняем ID отзыва для дальнейших действий
+	h.stateManager.SetUserData(userID, "current_review_id", review.ID)
+
+	msg := tgbotapi.NewMessage(chatID, message.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+	h.bot.Send(msg)
+}
+
+// HandleReviewCallback обрабатывает callback от inline кнопок отзывов
+func (h *ReviewHandlers) HandleReviewCallback(update tgbotapi.Update) {
+	callback := update.CallbackQuery
+	data := callback.Data
+	chatID := callback.Message.Chat.ID
+
+	InfoLog.Printf("HandleReviewCallback: %s", data)
+
+	if strings.HasPrefix(data, "review_rate_") {
+		ratingStr := strings.TrimPrefix(data, "review_rate_")
+		rating, err := strconv.Atoi(ratingStr)
+		if err == nil && rating >= 1 && rating <= 5 {
+			h.HandleReviewRating(update, rating)
+		} else {
+			h.sendErrorMessage(chatID, "Неверный рейтинг")
+		}
+	} else if data == "review_cancel" {
+		h.HandleReviewCancel(update)
+	} else if strings.HasPrefix(data, "add_review_") {
+		vetIDStr := strings.TrimPrefix(data, "add_review_")
+		vetID, err := strconv.Atoi(vetIDStr)
+		if err == nil {
+			h.HandleAddReview(update, vetID)
+		} else {
+			h.sendErrorMessage(chatID, "Ошибка при обработке запроса")
+		}
+	} else {
+		h.sendErrorMessage(chatID, "Неизвестная команда отзыва")
+	}
+}
+
+// handleBackToAdmin возвращает пользователя в админское меню
+func (h *ReviewHandlers) handleBackToAdmin(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Очищаем состояние модерации
+	h.stateManager.ClearUserState(userID)
+	h.stateManager.ClearUserData(userID)
+
+	// Просто отправляем сообщение с инструкцией
+	msg := tgbotapi.NewMessage(chatID, "Возврат в админское меню. Используйте /admin для открытия панели администратора.")
+	h.bot.Send(msg)
 }
 
 // // approveReview одобряет отзыв
