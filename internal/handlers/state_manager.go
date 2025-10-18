@@ -135,3 +135,14 @@ func (sm *StateManager) UserHasState(userID int64) bool {
 	_, exists := sm.userStates[userID]
 	return exists
 }
+
+// В state_manager.go добавьте:
+func (sm *StateManager) PrintDebugInfo(userID int64) {
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
+
+	state := sm.userStates[userID]
+	data := sm.userData[userID]
+
+	InfoLog.Printf("StateManager Debug - User: %d, State: %s, Data: %+v", userID, state, data)
+}

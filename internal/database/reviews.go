@@ -158,9 +158,17 @@ func (r *ReviewRepository) GetPendingReviews() ([]*models.Review, error) {
 
 // UpdateReviewStatus обновляет статус отзыва
 func (r *ReviewRepository) UpdateReviewStatus(reviewID int, status string, moderatorID int) error {
-	query := `UPDATE reviews SET status = $1, moderated_at = $2, moderated_by = $3 WHERE id = $4`
+	var query string
+	var err error
 
-	_, err := r.db.Exec(query, status, time.Now(), moderatorID, reviewID)
+	if moderatorID > 0 {
+		query = `UPDATE reviews SET status = $1, moderated_at = $2, moderated_by = $3 WHERE id = $4`
+		_, err = r.db.Exec(query, status, time.Now(), moderatorID, reviewID)
+	} else {
+		query = `UPDATE reviews SET status = $1, moderated_at = $2 WHERE id = $3`
+		_, err = r.db.Exec(query, status, time.Now(), reviewID)
+	}
+
 	return err
 }
 

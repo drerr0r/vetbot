@@ -64,7 +64,7 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("📊 Статистика"),
-			tgbotapi.NewKeyboardButton("⭐ Модерация отзывов"), // ДОБАВЬТЕ ЭТУ КНОПКУ
+			tgbotapi.NewKeyboardButton("⭐ Модерация отзывов"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
@@ -258,7 +258,7 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 	case "📊 Статистика":
 		h.HandleStats(update)
 	case "⭐ Модерация отзывов":
-		h.handleReviewModeration(update)
+		h.reviewHandlers.HandleReviewModeration(update)
 	case "⚙️ Настройки":
 		h.showSettings(update)
 	case "❌ Выйти из админки":
