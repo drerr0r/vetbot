@@ -734,6 +734,10 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 		h.handleShowReviewsCallback(callback)
 	case strings.HasPrefix(data, "add_review_"):
 		h.handleAddReviewCallback(callback)
+	case strings.HasPrefix(data, "review_rate_"):
+		h.handleReviewRatingCallback(update)
+	case data == "review_cancel":
+		h.handleReviewCancelCallback(update)
 	default:
 		// Неизвестный callback
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Неизвестная команда")
@@ -1331,3 +1335,40 @@ func (h *VetHandlers) sendVetWithDetailsButton(chatID int64, vet *models.Veterin
 
 // 	return messages
 // }
+
+// handleReviewRatingCallback обрабатывает выбор рейтинга для отзыва
+func (h *VetHandlers) handleReviewRatingCallback(update tgbotapi.Update) {
+	callback := update.CallbackQuery
+	data := callback.Data
+
+	// Извлекаем рейтинг из callback data (review_rate_1, review_rate_2 и т.д.)
+	ratingStr := strings.TrimPrefix(data, "review_rate_")
+	rating, err := strconv.Atoi(ratingStr)
+	if err != nil || rating < 1 || rating > 5 {
+		ErrorLog.Printf("Invalid rating in callback: %s", data)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "❌ Неверный рейтинг")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	InfoLog.Printf("Processing review rating: %d", rating)
+
+	// Передаем обработку в ReviewHandlers
+	h.reviewHandlers.HandleReviewRating(update, rating)
+
+	// Подтверждаем callback
+	callbackConfig := tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Выбрано %d звезд", rating))
+	h.bot.Request(callbackConfig)
+}
+
+// handleReviewCancelCallback обрабатывает отмену добавления отзыва
+func (h *VetHandlers) handleReviewCancelCallback(update tgbotapi.Update) {
+	InfoLog.Printf("Processing review cancellation")
+
+	// Передаем обработку в ReviewHandlers
+	h.reviewHandlers.HandleReviewCancel(update)
+
+	// Подтверждаем callback
+	callbackConfig := tgbotapi.NewCallback(update.CallbackQuery.ID, "❌ Отмена")
+	h.bot.Request(callbackConfig)
+}
