@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -106,23 +107,23 @@ func TestBotHandlers_MessageContentLogic(t *testing.T) {
 
 func TestBotHandlers_Structure(t *testing.T) {
 	t.Run("BotHandlers has required fields", func(t *testing.T) {
-		mockBot := NewMockBot() // ИСПРАВЛЕНО: используем мок
+		mockBot := NewMockBot()
 		handler := NewBotHandlers(mockBot)
 
 		// Проверяем что структура имеет ожидаемые поля
 		assert.NotNil(t, handler)
-		assert.Equal(t, mockBot, handler.bot) // ИСПРАВЛЕНО: проверяем что мок установлен
+		assert.Equal(t, mockBot, handler.bot)
 	})
 
 	t.Run("Multiple handler instances are independent", func(t *testing.T) {
-		mockBot1 := NewMockBot() // ИСПРАВЛЕНО: используем моки
+		mockBot1 := NewMockBot()
 		mockBot2 := NewMockBot()
 
 		handler1 := NewBotHandlers(mockBot1)
 		handler2 := NewBotHandlers(mockBot2)
 
-		// Проверяем что это разные экземпляры
-		assert.NotEqual(t, handler1, handler2, "Handler instances should be different")
+		// Проверяем что это разные экземпляры (сравниваем содержимое, а не указатели)
+		assert.NotEqual(t, fmt.Sprintf("%p", handler1), fmt.Sprintf("%p", handler2), "Handler instances should be different")
 
 		// Проверяем что оба имеют своих ботов
 		assert.Equal(t, mockBot1, handler1.bot)

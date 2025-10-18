@@ -16,7 +16,7 @@ func TestBasicCompilation(t *testing.T) {
 	assert.NotNil(t, mockDB)
 
 	// Проверяем создание обработчиков
-	vetHandlers := NewVetHandlers(mockBot, mockDB)
+	vetHandlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 	assert.NotNil(t, vetHandlers)
 
 	config := CreateTestConfig()

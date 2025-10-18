@@ -601,7 +601,7 @@ func CreateTestMainHandlers() (*MainHandler, *MockBot) {
 func CreateTestVetHandlers() (*VetHandlers, *MockBot, *MockDatabase) {
 	mockBot := NewMockBot()
 	mockDB := NewMockDatabase()
-	handlers := NewVetHandlers(mockBot, mockDB)
+	handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 	return handlers, mockBot, mockDB
 }
 
@@ -1036,4 +1036,38 @@ func (m *MockDatabase) GetReviewStats(vetID int) (*models.ReviewStats, error) {
 		return m.GetReviewStatsFunc(vetID)
 	}
 	return &models.ReviewStats{}, nil
+}
+
+// AddTestReview добавляет тестовый отзыв
+func (m *MockDatabase) AddTestReview(review *models.Review) {
+	// Для моков просто сохраняем в памяти
+	// В реальном тесте нужно будет добавить логику
+}
+
+// SetupReviewMocks настраивает моки для тестирования отзывов
+func SetupReviewMocks(mockDB *MockDatabase) {
+	mockDB.GetApprovedReviewsByVetFunc = func(vetID int) ([]*models.Review, error) {
+		// Возвращаем тестовые отзывы
+		return []*models.Review{
+			{
+				ID:      1,
+				Rating:  5,
+				Comment: "Отличный врач!",
+				User:    &models.User{FirstName: "Тестовый", LastName: "Пользователь"},
+			},
+		}, nil
+	}
+
+	mockDB.GetReviewStatsFunc = func(vetID int) (*models.ReviewStats, error) {
+		return &models.ReviewStats{
+			VeterinarianID:  vetID,
+			AverageRating:   4.5,
+			TotalReviews:    10,
+			ApprovedReviews: 8,
+		}, nil
+	}
+
+	mockDB.HasUserReviewForVetFunc = func(userID int, vetID int) (bool, error) {
+		return false, nil // Пользователь еще не оставлял отзыв
+	}
 }

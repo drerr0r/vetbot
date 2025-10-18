@@ -52,6 +52,12 @@ func (h *ReviewHandlers) HandleReviewCancel(update tgbotapi.Update) {
 
 // HandleAddReview начинает процесс добавления отзыва
 func (h *ReviewHandlers) HandleAddReview(update tgbotapi.Update, vetID int) {
+	// Проверяем наличие CallbackQuery и Message
+	if update.CallbackQuery == nil || update.CallbackQuery.Message == nil {
+		ErrorLog.Printf("HandleAddReview: CallbackQuery or Message is nil")
+		return
+	}
+
 	chatID := update.CallbackQuery.Message.Chat.ID
 
 	// Проверяем, оставлял ли пользователь уже отзыв этому врачу

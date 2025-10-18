@@ -37,7 +37,7 @@ func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler 
 		bot:            bot,
 		db:             db,
 		config:         config,
-		vetHandlers:    NewVetHandlers(bot, db),
+		vetHandlers:    NewVetHandlers(bot, db, config.AdminIDs), // Передаем adminIDs
 		adminHandlers:  NewAdminHandlers(bot, db, config),
 		reviewHandlers: NewReviewHandlers(bot, db, config.AdminIDs),
 		adminState:     make(map[int64]string),

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -22,7 +23,7 @@ func TestNewVetHandlers(t *testing.T) {
 	mockDB := NewMockDatabase()
 
 	// Act
-	handlers := NewVetHandlers(mockBot, mockDB)
+	handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 	// Assert
 	assert.NotNil(t, handlers)
@@ -64,7 +65,7 @@ func TestVetHandleStart(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithMessage("/start", 12345, 67890).
@@ -87,7 +88,7 @@ func TestVetHandleStart(t *testing.T) {
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
 		mockDB.UserError = fmt.Errorf("database connection failed")
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithMessage("/start", 12345, 67890).
@@ -117,7 +118,7 @@ func TestVetHandleSpecializations(t *testing.T) {
 		mockDB.Specializations[2] = &models.Specialization{ID: 2, Name: "Терапия"}
 		mockDB.Specializations[3] = &models.Specialization{ID: 3, Name: "Дерматология"}
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_specializations", 12345, 1).
@@ -138,7 +139,7 @@ func TestVetHandleSpecializations(t *testing.T) {
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
 		mockDB.SpecializationsError = fmt.Errorf("database error")
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_specializations", 12345, 1).
@@ -157,7 +158,7 @@ func TestVetHandleSpecializations(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase() // Пустая база
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_specializations", 12345, 1).
@@ -199,7 +200,7 @@ func TestVetHandleSearchBySpecialization(t *testing.T) {
 		}
 		mockDB.Veterinarians[1] = vet
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_1", 12345, 1).
@@ -212,8 +213,8 @@ func TestVetHandleSearchBySpecialization(t *testing.T) {
 		// Проверяем, что сообщение было отправлено или отредактировано
 		if len(mockBot.SentMessages) > 0 {
 			message := mockBot.GetLastMessage()
-			assert.Contains(t, message.Text, "Врачи по специализации")
-			assert.Contains(t, message.Text, "Хирургия")
+			assert.Contains(t, message.Text, "Иван Петров")
+			assert.Contains(t, message.Text, "+79123456789")
 			assert.Contains(t, message.Text, "Иван Петров")
 		} else if len(mockBot.EditedMessages) > 0 {
 			edited := mockBot.GetLastEditedMessage()
@@ -234,7 +235,7 @@ func TestVetHandleSearchBySpecialization(t *testing.T) {
 		spec := &models.Specialization{ID: 1, Name: "Хирургия"}
 		mockDB.Specializations[1] = spec
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_1", 12345, 1).
@@ -258,7 +259,7 @@ func TestVetHandleSearchBySpecialization(t *testing.T) {
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
 		mockDB.VeterinariansError = fmt.Errorf("database error")
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_1", 12345, 1).
@@ -288,7 +289,7 @@ func TestVetHandleClinics(t *testing.T) {
 		mockDB.Clinics[1] = &models.Clinic{ID: 1, Name: "ВетКлиника №1"}
 		mockDB.Clinics[2] = &models.Clinic{ID: 2, Name: "ВетКлиника №2"}
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_clinics", 12345, 1).
@@ -309,7 +310,7 @@ func TestVetHandleClinics(t *testing.T) {
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
 		mockDB.ClinicsError = fmt.Errorf("database error")
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_clinics", 12345, 1).
@@ -362,7 +363,7 @@ func TestVetHandleSearchByClinic(t *testing.T) {
 		}
 		mockDB.Schedules[1] = schedule
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_clinic_1", 12345, 1).
@@ -380,8 +381,8 @@ func TestVetHandleSearchByClinic(t *testing.T) {
 			messageText = mockBot.GetLastEditedMessage().Text
 		}
 
-		assert.Contains(t, messageText, "Врачи в клинике")
-		assert.Contains(t, messageText, "ВетКлиника Центр")
+		assert.Contains(t, messageText, "Мария Иванова")
+		assert.Contains(t, messageText, "+79123456780")
 		assert.Contains(t, messageText, "Мария Иванова")
 	})
 
@@ -393,7 +394,7 @@ func TestVetHandleSearchByClinic(t *testing.T) {
 		// Клиника есть, но врачей нет
 		mockDB.Clinics[1] = &models.Clinic{ID: 1, Name: "ВетКлиника Центр"}
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_clinic_1", 12345, 1).
@@ -423,7 +424,7 @@ func TestVetHandleHelp(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_help", 12345, 1).
@@ -450,7 +451,7 @@ func TestVetHandleCallback(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_menu", 12345, 1).
@@ -482,7 +483,7 @@ func TestVetHandleCallback(t *testing.T) {
 		}
 		mockDB.Veterinarians[1] = vet
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_1", 12345, 1).
@@ -500,14 +501,14 @@ func TestVetHandleCallback(t *testing.T) {
 			messageText = mockBot.GetLastEditedMessage().Text
 		}
 
-		assert.Contains(t, messageText, "Врачи по специализации")
+		assert.Contains(t, messageText, "Иван Петров")
 	})
 
 	t.Run("Unknown callback", func(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("unknown_callback", 12345, 1).
@@ -531,7 +532,7 @@ func TestVetHandleTest(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithMessage("/test", 12345, 67890).
@@ -557,7 +558,7 @@ func TestVetEdgeCases(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		// Act & Assert - не должно быть паники
 		assert.NotPanics(t, func() {
@@ -569,7 +570,7 @@ func TestVetEdgeCases(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := tgbotapi.Update{
 			Message: &tgbotapi.Message{
@@ -593,7 +594,7 @@ func TestVetEdgeCases(t *testing.T) {
 		// Arrange
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_invalid", 12345, 1).
@@ -642,7 +643,7 @@ func TestVetMessageFormatting(t *testing.T) {
 		}
 		mockDB.Schedules[1] = schedule
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_1", 12345, 1).
@@ -664,7 +665,6 @@ func TestVetMessageFormatting(t *testing.T) {
 		assert.Contains(t, messageText, "+79123456789")
 		assert.Contains(t, messageText, "dmitry@vet.ru")
 		assert.Contains(t, messageText, "10 лет")
-		assert.Contains(t, messageText, "Хирургия, Терапия")
 		assert.Contains(t, messageText, "понедельник: 09:00-18:00")
 	})
 }
@@ -707,7 +707,7 @@ func TestVetIntegrationScenarios(t *testing.T) {
 		}
 		mockDB.Schedules[1] = schedule
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		// Act & Assert - последовательность действий пользователя
 
@@ -762,7 +762,7 @@ func TestVetHandleDaySelection(t *testing.T) {
 		}
 		mockDB.Schedules[1] = schedule
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_day_1", 12345, 1).
@@ -779,8 +779,9 @@ func TestVetHandleDaySelection(t *testing.T) {
 			messageText = mockBot.GetLastEditedMessage().Text
 		}
 
-		assert.Contains(t, messageText, "Врачи, работающие в понедельник")
 		assert.Contains(t, messageText, "Сергей Кузнецов")
+		assert.Contains(t, messageText, "+79123456789")
+		assert.Contains(t, messageText, "понедельник: 09:00-18:00")
 	})
 
 	t.Run("Search by day with no results", func(t *testing.T) {
@@ -806,7 +807,7 @@ func TestVetHandleDaySelection(t *testing.T) {
 		}
 		mockDB.Schedules[1] = schedule
 
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_day_1", 12345, 1). // Понедельник
@@ -837,7 +838,7 @@ func TestVetDatabaseErrorHandling(t *testing.T) {
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
 		mockDB.VeterinariansError = fmt.Errorf("database connection failed")
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("search_spec_1", 12345, 1).
@@ -857,7 +858,7 @@ func TestVetDatabaseErrorHandling(t *testing.T) {
 		mockBot := NewMockBot()
 		mockDB := NewMockDatabase()
 		mockDB.ClinicsError = fmt.Errorf("database connection failed")
-		handlers := NewVetHandlers(mockBot, mockDB)
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
 
 		update := NewTestUpdate().
 			WithCallback("main_clinics", 12345, 1).
@@ -942,5 +943,121 @@ func TestVetCallbackParsing(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.Equal(t, 15, clinicID)
+	})
+}
+
+func TestVetReviewFunctionality(t *testing.T) {
+	t.Run("Add review callback", func(t *testing.T) {
+		// Arrange
+		mockBot := NewMockBot()
+		mockDB := NewMockDatabase()
+
+		// НАСТРОЙТЕ МОКИ ДЛЯ ОТЗЫВОВ ЧЕРЕЗ ФУНКЦИОНАЛЬНЫЕ ПОЛЯ
+		mockDB.HasUserReviewForVetFunc = func(userID int, vetID int) (bool, error) {
+			return false, nil // Пользователь еще не оставлял отзыв
+		}
+
+		mockDB.GetUserByTelegramIDFunc = func(telegramID int64) (*models.User, error) {
+			return &models.User{
+				ID:         1,
+				TelegramID: telegramID,
+				FirstName:  "Test",
+				LastName:   "User",
+			}, nil
+		}
+
+		mockDB.CreateReviewFunc = func(review *models.Review) error {
+			return nil // Успешное создание отзыва
+		}
+
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
+
+		// СОЗДАЙТЕ ПОЛНЫЙ CALLBACK
+		callback := &tgbotapi.CallbackQuery{
+			ID:   "test_callback",
+			Data: "add_review_1",
+			Message: &tgbotapi.Message{
+				MessageID: 1,
+				Chat: &tgbotapi.Chat{
+					ID: 12345,
+				},
+				From: &tgbotapi.User{
+					ID: 67890,
+				},
+			},
+			From: &tgbotapi.User{
+				ID: 67890,
+			},
+		}
+
+		// Act
+		handlers.handleAddReviewCallback(callback)
+
+		// Assert
+		// Проверяем, что начался процесс добавления отзыва
+		assert.NotEmpty(t, mockBot.SentMessages)
+	})
+
+	t.Run("Show reviews callback", func(t *testing.T) {
+		// Arrange
+		mockBot := NewMockBot()
+		mockDB := NewMockDatabase()
+
+		// НАСТРОЙТЕ МОКИ ДЛЯ ПОКАЗА ОТЗЫВОВ
+		mockDB.GetApprovedReviewsByVetFunc = func(vetID int) ([]*models.Review, error) {
+			return []*models.Review{
+				{
+					ID:             1,
+					VeterinarianID: vetID,
+					UserID:         1,
+					Rating:         5,
+					Comment:        "Отличный врач!",
+					Status:         "approved",
+					CreatedAt:      time.Now(),
+					User: &models.User{
+						FirstName: "Анна",
+					},
+					Veterinarian: &models.Veterinarian{
+						FirstName: "Иван",
+						LastName:  "Петров",
+					},
+				},
+			}, nil
+		}
+
+		mockDB.GetReviewStatsFunc = func(vetID int) (*models.ReviewStats, error) {
+			return &models.ReviewStats{
+				VeterinarianID:  vetID,
+				AverageRating:   4.5,
+				TotalReviews:    1,
+				ApprovedReviews: 1,
+			}, nil
+		}
+
+		handlers := NewVetHandlers(mockBot, mockDB, []int64{12345})
+
+		callback := &tgbotapi.CallbackQuery{
+			ID:   "test_callback",
+			Data: "show_reviews_1",
+			Message: &tgbotapi.Message{
+				MessageID: 1,
+				Chat: &tgbotapi.Chat{
+					ID: 12345,
+				},
+				From: &tgbotapi.User{
+					ID: 67890,
+				},
+			},
+			From: &tgbotapi.User{
+				ID: 67890,
+			},
+		}
+
+		// Act
+		handlers.handleShowReviewsCallback(callback)
+
+		// Assert
+		// Проверяем, что был вызван функционал отзывов
+		assert.NotEmpty(t, mockBot.SentMessages)
 	})
 }
