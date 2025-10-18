@@ -14,7 +14,9 @@ import (
 
 // Database представляет обертку для работы с базой данных
 type Database struct {
-	db *sql.DB
+	db      *sql.DB
+	users   *UserRepository
+	reviews *ReviewRepository
 }
 
 // New создает новое подключение к базе данных
@@ -935,11 +937,6 @@ func (d *Database) GetReviewStats(vetID int) (*models.ReviewStats, error) {
 	return repo.GetReviewStats(vetID)
 }
 
-func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
-	repo := NewReviewRepository(d.db)
-	return repo.GetUserByTelegramID(telegramID)
-}
-
 // DebugSpecializationVetsCount - диагностическая функция для отладки количества врачей по специализациям
 func (d *Database) DebugSpecializationVetsCount() (map[int]int, error) {
 	query := `
@@ -1231,4 +1228,40 @@ func (db *Database) DeleteVeterinarian(vetID int) error {
 	}
 
 	return nil
+}
+
+// ========== МЕТОДЫ ДЛЯ РАБОТЫ С ПОЛЬЗОВАТЕЛЯМИ ==========
+
+// GetUserByID возвращает пользователя по ID
+func (d *Database) GetUserByID(userID int) (*models.User, error) {
+	query := `SELECT id, telegram_id, username, first_name, last_name, phone, created_at 
+              FROM users WHERE id = $1`
+
+	var user models.User
+	err := d.db.QueryRow(query, userID).Scan(
+		&user.ID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName, &user.Phone, &user.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// GetUserByTelegramID возвращает пользователя по Telegram ID
+func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
+	query := `SELECT id, telegram_id, username, first_name, last_name, phone, created_at 
+              FROM users WHERE telegram_id = $1`
+
+	var user models.User
+	err := d.db.QueryRow(query, telegramID).Scan(
+		&user.ID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName, &user.Phone, &user.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }

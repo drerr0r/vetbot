@@ -1,17 +1,15 @@
-// internal/imports/template_generator.go
-package imports
+package handlers
 
 import (
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/xuri/excelize/v2"
 )
 
 type TemplateGenerator struct {
-	db *database.Database
+	db Database
 }
 
-func NewTemplateGenerator(db *database.Database) *TemplateGenerator {
+func NewTemplateGenerator(db Database) *TemplateGenerator {
 	return &TemplateGenerator{db: db}
 }
 

@@ -1309,3 +1309,12 @@ func (m *MockDatabase) UpdateClinicField(clinicID int, field string, value inter
 	}
 	return nil
 }
+func (m *MockDatabase) GetUserByID(userID int) (*models.User, error) {
+	// Реализация для тестов - можно вернуть фиктивного пользователя
+	return &models.User{
+		ID:         userID,
+		FirstName:  "Test",
+		LastName:   "User",
+		TelegramID: 123456789,
+	}, nil
+}

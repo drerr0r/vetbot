@@ -219,3 +219,20 @@ func (r *ReviewRepository) GetUserByTelegramID(telegramID int64) (*models.User, 
 
 	return &user, nil
 }
+
+// GetUserByID возвращает пользователя по ID
+func (r *ReviewRepository) GetUserByID(userID int) (*models.User, error) {
+	query := `SELECT id, telegram_id, username, first_name, last_name, phone, created_at 
+              FROM users WHERE id = $1`
+
+	var user models.User
+	err := r.db.QueryRow(query, userID).Scan(
+		&user.ID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName, &user.Phone, &user.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}

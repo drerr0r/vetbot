@@ -91,4 +91,6 @@ type Database interface {
 	GetCitiesCount() (int, error)
 	GetVetsCountByCity(cityID int) (int, error)
 	GetClinicsCountByCity(cityID int) (int, error)
+
+	GetUserByID(userID int) (*models.User, error)
 }

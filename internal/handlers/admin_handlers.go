@@ -159,6 +159,9 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		h.handleCityConfirmDelete(update, text)
 	case "city_search_region":
 		h.handleCitySearchRegion(update, text)
+	case "review_moderation":
+		// Передаем управление в ReviewHandlers для обработки модерации
+		h.reviewHandlers.HandleReviewModerationInput(update)
 	default:
 		h.handleMainMenu(update, text)
 	}
@@ -2863,15 +2866,8 @@ func (h *AdminHandlers) GenerateImportTemplate(w http.ResponseWriter, r *http.Re
 	filename := fmt.Sprintf("vet_import_template_%s.xlsx", time.Now().Format("20060102_150405"))
 	filepath := filepath.Join(os.TempDir(), filename)
 
-	// Получаем конкретную реализацию базы данных через type assertion
-	dbImpl, ok := h.db.(*database.Database)
-	if !ok {
-		http.Error(w, "Неверный тип базы данных", http.StatusInternalServerError)
-		return
-	}
-
 	// Создаем генератор и генерируем шаблон
-	generator := imports.NewTemplateGenerator(dbImpl)
+	generator := NewTemplateGenerator(h.db)
 	err := generator.GenerateTemplate(filepath)
 	if err != nil {
 		http.Error(w, "Ошибка генерации шаблона: "+err.Error(), http.StatusInternalServerError)
@@ -3059,10 +3055,9 @@ func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text stri
 
 // handleReviewModeration обрабатывает модерацию отзывов
 func (h *AdminHandlers) handleReviewModeration(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	h.adminState[userID] = "review_moderation"
 
 	// Используем существующий метод из ReviewHandlers
 	h.reviewHandlers.HandleReviewModeration(update)
-
-	// Устанавливаем состояние для возврата в админку
-	h.adminState[update.Message.From.ID] = "review_moderation"
 }

@@ -97,7 +97,7 @@ func (h *VetHandlers) formatVeterinarianDetails(vet *models.Veterinarian) string
 		message.WriteString("\n")
 	}
 
-	// Клиники и расписание
+	// Клиники и расписание - ИСПРАВЛЕННАЯ ЧАСТЬ
 	if len(vet.Schedules) > 0 {
 		message.WriteString("\n🏥 *Места приема и расписание:*\n")
 
@@ -135,18 +135,25 @@ func (h *VetHandlers) formatVeterinarianDetails(vet *models.Veterinarian) string
 				}
 			}
 
-			// Расписание по дням - ИСПРАВЛЕННАЯ ЧАСТЬ
-			daysMap := make(map[int]map[string]bool) // Используем map для уникальности временных слотов
+			// Расписание по дням
+			daysMap := make(map[int][]string)
+
+			// Собираем уникальные временные слоты для каждого дня
 			for _, schedule := range schedules {
 				timeSlot := fmt.Sprintf("%s-%s", schedule.StartTime, schedule.EndTime)
 
-				// Инициализируем map для дня если нужно
-				if daysMap[schedule.DayOfWeek] == nil {
-					daysMap[schedule.DayOfWeek] = make(map[string]bool)
+				// Проверяем, нет ли уже такого временного слота для этого дня
+				found := false
+				for _, existingSlot := range daysMap[schedule.DayOfWeek] {
+					if existingSlot == timeSlot {
+						found = true
+						break
+					}
 				}
 
-				// Добавляем временной слот только если он уникален
-				daysMap[schedule.DayOfWeek][timeSlot] = true
+				if !found {
+					daysMap[schedule.DayOfWeek] = append(daysMap[schedule.DayOfWeek], timeSlot)
+				}
 			}
 
 			if len(daysMap) > 0 {
@@ -155,19 +162,13 @@ func (h *VetHandlers) formatVeterinarianDetails(vet *models.Veterinarian) string
 
 				// Сортируем дни недели по порядку
 				for day := 1; day <= 7; day++ {
-					if timeSlotsMap, exists := daysMap[day]; exists && len(timeSlotsMap) > 0 {
+					if timeSlots, exists := daysMap[day]; exists && len(timeSlots) > 0 {
 						dayName := getDayName(day)
 
-						// Конвертируем map в slice уникальных временных слотов
-						var uniqueTimeSlots []string
-						for timeSlot := range timeSlotsMap {
-							uniqueTimeSlots = append(uniqueTimeSlots, timeSlot)
-						}
-
 						// Сортируем временные слоты для красивого отображения
-						sort.Strings(uniqueTimeSlots)
+						sort.Strings(timeSlots)
 
-						scheduleParts = append(scheduleParts, fmt.Sprintf("   • %s: %s", dayName, strings.Join(uniqueTimeSlots, ", ")))
+						scheduleParts = append(scheduleParts, fmt.Sprintf("   • %s: %s", dayName, strings.Join(timeSlots, ", ")))
 					}
 				}
 				message.WriteString(strings.Join(scheduleParts, "\n"))
