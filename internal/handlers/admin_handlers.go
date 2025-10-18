@@ -94,6 +94,13 @@ func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
 		return
 	}
 
+	// ПРОВЕРКА: Если пользователь в состоянии модерации отзывов, передаем управление
+	if state == "review_moderation" {
+		InfoLog.Printf("🔍 DEBUG: Redirecting to ReviewHandlers for moderation input")
+		h.reviewHandlers.HandleReviewModerationInput(update)
+		return
+	}
+
 	// Проверяем кнопку "Отмена" для процессов добавления
 	if text == "❌ Отмена" {
 		h.handleCancelProcess(update, state)
@@ -244,7 +251,6 @@ func (h *AdminHandlers) cleanTempData(userID int64) {
 	delete(h.tempData, userIDStr+"_cities")
 }
 
-// handleMainMenu обрабатывает главное меню админки
 func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 	switch text {
 	case "👥 Управление врачами":
@@ -258,6 +264,9 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 	case "📊 Статистика":
 		h.HandleStats(update)
 	case "⭐ Модерация отзывов":
+		// ВАЖНО: Устанавливаем состояние перед вызовом HandleReviewModeration
+		userID := update.Message.From.ID
+		h.adminState[userID] = "review_moderation"
 		h.reviewHandlers.HandleReviewModeration(update)
 	case "⚙️ Настройки":
 		h.showSettings(update)
@@ -3051,13 +3060,4 @@ func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text stri
 	}
 
 	h.showVetEditMenu(update, vet)
-}
-
-// handleReviewModeration обрабатывает модерацию отзывов
-func (h *AdminHandlers) handleReviewModeration(update tgbotapi.Update) {
-	userID := update.Message.From.ID
-	h.adminState[userID] = "review_moderation"
-
-	// Используем существующий метод из ReviewHandlers
-	h.reviewHandlers.HandleReviewModeration(update)
 }
