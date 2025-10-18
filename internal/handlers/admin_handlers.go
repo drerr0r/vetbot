@@ -707,8 +707,9 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 		sb.WriteString(fmt.Sprintf("%s %d. %s %s - %s\n", status, i+1, firstName, lastName, phone))
 
 		// Добавляем информацию о проблемных полях
-		if !h.hasCompleteRequiredData(vet) {
-			sb.WriteString("   ⚠️ *Неполные данные (авто-неактивен)*\n")
+		missingFields := h.getMissingRequiredFields(vet)
+		if len(missingFields) > 0 {
+			sb.WriteString(fmt.Sprintf("   ⚠️ *Не заполнено:* %s\n", strings.Join(missingFields, ", ")))
 		} else if vet.FirstName == "ОШИБКА_ДАННЫХ" {
 			sb.WriteString("   🚨 *ОШИБКА ДАННЫХ - требует срочного редактирования*\n")
 		}
@@ -730,25 +731,25 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 	InfoLog.Printf("✅ Список врачей успешно отправлен пользователю %d", userID)
 }
 
-// hasCompleteRequiredData проверяет обязательные поля врача
-func (h *AdminHandlers) hasCompleteRequiredData(vet *models.Veterinarian) bool {
-	// Обязательные поля: имя, фамилия, телефон
-	if strings.TrimSpace(vet.FirstName) == "" {
-		return false
-	}
-	if strings.TrimSpace(vet.LastName) == "" {
-		return false
-	}
-	if strings.TrimSpace(vet.Phone) == "" {
-		return false
-	}
-	// Исключаем врачей с ошибкой данных
-	if vet.FirstName == "ОШИБКА_ДАННЫХ" {
-		return false
-	}
+// // hasCompleteRequiredData проверяет обязательные поля врача
+// func (h *AdminHandlers) hasCompleteRequiredData(vet *models.Veterinarian) bool {
+// 	// Обязательные поля: имя, фамилия, телефон
+// 	if strings.TrimSpace(vet.FirstName) == "" {
+// 		return false
+// 	}
+// 	if strings.TrimSpace(vet.LastName) == "" {
+// 		return false
+// 	}
+// 	if strings.TrimSpace(vet.Phone) == "" {
+// 		return false
+// 	}
+// 	// Исключаем врачей с ошибкой данных
+// 	if vet.FirstName == "ОШИБКА_ДАННЫХ" {
+// 		return false
+// 	}
 
-	return true
-}
+// 	return true
+// }
 
 // showVetEditMenu показывает меню редактирования врача
 func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Veterinarian) {
@@ -772,16 +773,28 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 		specsText = strings.Join(specIDs, ",")
 	}
 
+	// Проверяем, какие обязательные поля не заполнены
+	missingFields := h.getMissingRequiredFields(vet)
+
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("👨‍⚕️ *Управление врачом:* %s %s\n\n", vet.FirstName, vet.LastName))
-	sb.WriteString(fmt.Sprintf("📞 Телефон: %s\n", vet.Phone))
+
+	sb.WriteString(fmt.Sprintf("📞 Телефон: %s", vet.Phone))
+	if strings.TrimSpace(vet.Phone) == "" {
+		sb.WriteString(" ❌")
+	}
+	sb.WriteString("\n")
 
 	if vet.Email.Valid {
 		sb.WriteString(fmt.Sprintf("📧 Email: %s\n", vet.Email.String))
+	} else {
+		sb.WriteString("📧 Email: Не указан\n")
 	}
 
 	if vet.ExperienceYears.Valid {
 		sb.WriteString(fmt.Sprintf("💼 Опыт: %d лет\n", vet.ExperienceYears.Int64))
+	} else {
+		sb.WriteString("💼 Опыт: Не указан\n")
 	}
 
 	sb.WriteString("📊 Статус: ")
@@ -792,6 +805,16 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 	}
 
 	sb.WriteString(fmt.Sprintf("🎯 Специализации: %s\n\n", specsText))
+
+	// Показываем, какие поля нужно заполнить для активации
+	if len(missingFields) > 0 {
+		sb.WriteString("⚠️ *Для активации заполните:*\n")
+		for _, field := range missingFields {
+			sb.WriteString(fmt.Sprintf("• %s\n", field))
+		}
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("Выберите действие:")
 
 	keyboard := tgbotapi.NewReplyKeyboard(
@@ -821,6 +844,23 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 	msg.ReplyMarkup = keyboard
 
 	h.bot.Send(msg)
+}
+
+// getMissingRequiredFields возвращает список незаполненных обязательных полей
+func (h *AdminHandlers) getMissingRequiredFields(vet *models.Veterinarian) []string {
+	var missing []string
+
+	if strings.TrimSpace(vet.FirstName) == "" {
+		missing = append(missing, "Имя")
+	}
+	if strings.TrimSpace(vet.LastName) == "" {
+		missing = append(missing, "Фамилия")
+	}
+	if strings.TrimSpace(vet.Phone) == "" {
+		missing = append(missing, "Телефон")
+	}
+
+	return missing
 }
 
 // handleVetEditMenu обрабатывает выбор действия для врача
