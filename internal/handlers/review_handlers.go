@@ -18,7 +18,6 @@ type ReviewHandlers struct {
 	db           Database
 	adminIDs     []int64
 	stateManager *StateManager
-	mainHandler  *MainHandler
 }
 
 // NewReviewHandlers создает новый экземпляр ReviewHandlers
