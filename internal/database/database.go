@@ -324,7 +324,6 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
                      c.id, c.name, c.region, c.created_at
               FROM veterinarians v
               LEFT JOIN cities c ON v.city_id = c.id
-              WHERE v.id IS NOT NULL  // Добавляем фильтр от NULL ID
               ORDER BY v.first_name, v.last_name`
 
 	rows, err := d.db.Query(query)
