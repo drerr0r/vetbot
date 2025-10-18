@@ -23,14 +23,51 @@ CREATE INDEX IF NOT EXISTS idx_reviews_rating ON reviews(rating);
 -- Уникальный индекс чтобы пользователь мог оставить только один отзыв на врача
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_user_vet_unique ON reviews(user_id, veterinarian_id);
 
--- Ограничение на длину комментария
-ALTER TABLE reviews ADD CONSTRAINT check_comment_length CHECK (length(comment) <= 500);
+-- Ограничение на длину комментария (с обработкой если уже существует)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_comment_length') THEN
+        ALTER TABLE reviews ADD CONSTRAINT check_comment_length CHECK (length(comment) <= 500);
+    END IF;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
--- Вставляем тестовые отзывы (опционально)
-INSERT INTO reviews (veterinarian_id, user_id, rating, comment, status, created_at) VALUES 
-(1, 1, 5, 'Отличный врач! Очень помог нашему котику. Профессионал своего дела!', 'approved', NOW() - INTERVAL '5 days'),
-(1, 2, 4, 'Хороший специалист, но пришлось немного подождать. В целом доволен.', 'approved', NOW() - INTERVAL '3 days'),
-(2, 1, 5, 'Очень внимательная и заботливая врач. Наш питомец чувствует себя прекрасно!', 'approved', NOW() - INTERVAL '2 days'),
-(3, 2, 3, 'Нормальный врач, но цены немного завышены. Лечение помогло.', 'approved', NOW() - INTERVAL '1 day'),
-(1, 3, 5, 'Лучший ветеринар в городе! Спасибо за помощь!', 'pending', NOW())
-ON CONFLICT (user_id, veterinarian_id) DO NOTHING;
+-- Вставляем тестовые отзывы ТОЛЬКО если есть тестовые пользователи
+DO $$ 
+DECLARE
+    user1_exists BOOLEAN;
+    user2_exists BOOLEAN;
+    user3_exists BOOLEAN;
+BEGIN
+    -- Проверяем существование пользователей
+    SELECT EXISTS(SELECT 1 FROM users WHERE id = 1) INTO user1_exists;
+    SELECT EXISTS(SELECT 1 FROM users WHERE id = 2) INTO user2_exists;
+    SELECT EXISTS(SELECT 1 FROM users WHERE id = 3) INTO user3_exists;
+    
+    -- Вставляем отзывы только для существующих пользователей
+    IF user1_exists THEN
+        INSERT INTO reviews (veterinarian_id, user_id, rating, comment, status, created_at) VALUES 
+        (1, 1, 5, 'Отличный врач! Очень помог нашему котику. Профессионал своего дела!', 'approved', NOW() - INTERVAL '5 days')
+        ON CONFLICT (user_id, veterinarian_id) DO NOTHING;
+    END IF;
+    
+    IF user2_exists THEN
+        INSERT INTO reviews (veterinarian_id, user_id, rating, comment, status, created_at) VALUES 
+        (1, 2, 4, 'Хороший специалист, но пришлось немного подождать. В целом доволен.', 'approved', NOW() - INTERVAL '3 days'),
+        (3, 2, 3, 'Нормальный врач, но цены немного завышены. Лечение помогло.', 'approved', NOW() - INTERVAL '1 day')
+        ON CONFLICT (user_id, veterinarian_id) DO NOTHING;
+    END IF;
+    
+    IF user1_exists THEN
+        INSERT INTO reviews (veterinarian_id, user_id, rating, comment, status, created_at) VALUES 
+        (2, 1, 5, 'Очень внимательная и заботливая врач. Наш питомец чувствует себя прекрасно!', 'approved', NOW() - INTERVAL '2 days')
+        ON CONFLICT (user_id, veterinarian_id) DO NOTHING;
+    END IF;
+    
+    IF user3_exists THEN
+        INSERT INTO reviews (veterinarian_id, user_id, rating, comment, status, created_at) VALUES 
+        (1, 3, 5, 'Лучший ветеринар в городе! Спасибо за помощь!', 'pending', NOW())
+        ON CONFLICT (user_id, veterinarian_id) DO NOTHING;
+    END IF;
+END $$;

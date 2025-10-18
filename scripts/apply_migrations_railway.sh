@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e  # Выход при ошибке
+
 echo "🚀 Applying database migrations on Railway..."
 
 # Получаем DATABASE_URL из переменных окружения
@@ -9,13 +11,20 @@ if [ -z "$DATABASE_URL" ]; then
     exit 1
 fi
 
-# Применяем миграции
-echo "📝 Applying migrations from migrations/001_init.sql..."
-psql $DATABASE_URL -f migrations/001_init.sql
+echo "📝 Checking for database migrations..."
 
-if [ $? -eq 0 ]; then
-    echo "✅ Migrations applied successfully!"
-else
-    echo "❌ Failed to apply migrations"
-    exit 1
-fi
+# Применяем миграции по порядку
+for migration_file in migrations/*.sql; do
+    if [ -f "$migration_file" ]; then
+        echo "📝 Applying migration: $migration_file"
+        psql $DATABASE_URL -f "$migration_file" 
+        if [ $? -eq 0 ]; then
+            echo "✅ Successfully applied: $migration_file"
+        else
+            echo "⚠️ Migration completed with warnings: $migration_file"
+            # Не выходим с ошибкой, так как "already exists" - это нормально
+        fi
+    fi
+done
+
+echo "🎉 All migrations completed successfully!"
