@@ -422,17 +422,17 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 	chatID := update.Message.Chat.ID
 
 	// Получаем данные отзыва
-	reviewInterface := h.stateManager.GetUserData(userID, "moderation_review")
+	reviewInterface := h.stateManager.GetUserData(userID, "current_review")
 	review, ok := reviewInterface.(*models.Review)
-	if !ok {
-		h.sendErrorMessage(chatID, "Ошибка: данные отзыва не найдены")
+	if !ok || review == nil {
+		h.sendErrorMessage(chatID, "❌ Ошибка: данные отзыва не найдены")
 		return
 	}
 
 	// Получаем ID модератора из базы
 	moderator, err := h.db.GetUserByTelegramID(userID)
 	if err != nil {
-		h.sendErrorMessage(chatID, "Ошибка: модератор не найден")
+		h.sendErrorMessage(chatID, "❌ Ошибка: модератор не найден")
 		return
 	}
 
@@ -454,7 +454,7 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 	// Обновляем статус отзыва
 	err = h.db.UpdateReviewStatus(review.ID, status, moderator.ID)
 	if err != nil {
-		h.sendErrorMessage(chatID, "Ошибка при обновлении статуса отзыва")
+		h.sendErrorMessage(chatID, "❌ Ошибка при обновлении статуса отзыва")
 		return
 	}
 
@@ -608,8 +608,8 @@ func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review 
 		),
 	)
 
-	// Сохраняем ID отзыва для дальнейших действий
-	h.stateManager.SetUserData(userID, "current_review_id", review.ID)
+	// ВАЖНО: Сохраняем ВЕСЬ объект отзыва, а не только ID
+	h.stateManager.SetUserData(userID, "current_review", review)
 
 	msg := tgbotapi.NewMessage(chatID, message.String())
 	msg.ParseMode = "Markdown"
@@ -736,53 +736,4 @@ func (h *ReviewHandlers) handleBackToAdmin(update tgbotapi.Update) {
 
 // 	// Возвращаем к списку отзывов
 // 	h.HandleReviewModeration(update)
-// }
-
-// showReviewForModeration показывает отзыв с кнопками одобрить/отклонить
-// func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review *models.Review) {
-// 	var message strings.Builder
-
-// 	message.WriteString("📝 *Отзыв для модерации*\n\n")
-// 	message.WriteString(fmt.Sprintf("🆔 ID: %d\n", review.ID))
-
-// 	// Получаем информацию о пользователе
-// 	user, err := h.db.GetUserByID(review.UserID)
-// 	if err == nil && user != nil {
-// 		message.WriteString(fmt.Sprintf("👤 Пользователь: %s\n", user.FirstName))
-// 	} else {
-// 		message.WriteString(fmt.Sprintf("👤 Пользователь ID: %d\n", review.UserID))
-// 	}
-
-// 	// Получаем информацию о враче
-// 	vet, err := h.db.GetVeterinarianByID(review.VeterinarianID)
-// 	if err == nil && vet != nil {
-// 		message.WriteString(fmt.Sprintf("👨‍⚕️ Врач: %s %s\n", vet.FirstName, vet.LastName))
-// 	} else {
-// 		message.WriteString(fmt.Sprintf("👨‍⚕️ Врач ID: %d\n", review.VeterinarianID))
-// 	}
-
-// 	message.WriteString(fmt.Sprintf("⭐ Оценка: %d/5\n", review.Rating))
-// 	message.WriteString(fmt.Sprintf("💬 Текст: %s\n", review.Comment))
-// 	message.WriteString(fmt.Sprintf("📅 Дата: %s\n", review.CreatedAt.Format("02.01.2006 15:04")))
-
-// 	keyboard := tgbotapi.NewReplyKeyboard(
-// 		tgbotapi.NewKeyboardButtonRow(
-// 			tgbotapi.NewKeyboardButton("✅ Одобрить"),
-// 			tgbotapi.NewKeyboardButton("❌ Отклонить"),
-// 		),
-// 		tgbotapi.NewKeyboardButtonRow(
-// 			tgbotapi.NewKeyboardButton("🔙 Назад к списку"),
-// 		),
-// 	)
-
-// 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, message.String())
-// 	msg.ParseMode = "Markdown"
-// 	msg.ReplyMarkup = keyboard
-
-// 	// Сохраняем ID отзыва для дальнейших действий (используем временные данные вместо adminState)
-// 	userID := update.Message.From.ID
-// 	userIDStr := strconv.FormatInt(userID, 10)
-// 	h.tempData[userIDStr+"_review_action"] = review.ID
-
-// 	h.bot.Send(msg)
 // }
