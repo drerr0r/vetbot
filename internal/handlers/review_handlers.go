@@ -224,6 +224,15 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 		return
 	}
 
+	// ЗАГРУЖАЕМ ПОЛНЫЙ ОТЗЫВ С ВЕТЕРИНАРОМ
+	fullReview, err := h.db.GetReviewByID(review.ID)
+	if err != nil {
+		log.Printf("HandleReviewComment: error loading full review: %v", err)
+		// Используем исходный отзыв, но без ветеринара
+	} else {
+		review = fullReview
+	}
+
 	// Очищаем состояние и данные
 	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
@@ -472,9 +481,23 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
 func (h *ReviewHandlers) notifyAdminsAboutNewReview(review *models.Review) {
+	if review == nil {
+		ErrorLog.Printf("notifyAdminsAboutNewReview: review is nil")
+		return
+	}
 
-	if review == nil || review.Veterinarian == nil {
-		ErrorLog.Printf("notifyAdminsAboutNewReview: review or veterinarian is nil")
+	// ЗАГРУЖАЕМ ВЕТЕРИНАРА ЕСЛИ ОН НЕ ЗАГРУЖЕН
+	if review.Veterinarian == nil {
+		vet, err := h.db.GetVeterinarianByID(review.VeterinarianID)
+		if err != nil {
+			ErrorLog.Printf("notifyAdminsAboutNewReview: error loading veterinarian: %v", err)
+			return
+		}
+		review.Veterinarian = vet
+	}
+
+	if review.Veterinarian == nil {
+		ErrorLog.Printf("notifyAdminsAboutNewReview: veterinarian is nil after loading")
 		return
 	}
 
@@ -490,6 +513,7 @@ func (h *ReviewHandlers) notifyAdminsAboutNewReview(review *models.Review) {
 		h.bot.Send(msg)
 	}
 }
+
 func (h *ReviewHandlers) isAdmin(userID int64) bool {
 	for _, adminID := range h.adminIDs {
 		if userID == adminID {
@@ -520,11 +544,41 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 	// Проверяем кнопки действий модерации
 	switch text {
 	case "✅ Одобрить отзыв":
-		h.HandleReviewModerationConfirm(update, "✅ Одобрить отзыв")
+		// ПОЛУЧАЕМ ТЕКУЩИЙ ОТЗЫВ ИЗ СОСТОЯНИЯ
+		currentReviewInterface := h.stateManager.GetUserData(userID, "current_review")
+		if currentReviewInterface == nil {
+			h.sendErrorMessage(chatID, "❌ Не найден активный отзыв для модерации")
+			return
+		}
+
+		review, ok := currentReviewInterface.(*models.Review)
+		if !ok || review == nil {
+			h.sendErrorMessage(chatID, "❌ Ошибка данных отзыва")
+			return
+		}
+
+		// ВЫЗЫВАЕМ МЕТОД ОДОБРЕНИЯ
+		h.approveReview(update, review)
 		return
+
 	case "❌ Отклонить отзыв":
-		h.HandleReviewModerationConfirm(update, "❌ Отклонить отзыв")
+		// ПОЛУЧАЕМ ТЕКУЩИЙ ОТЗЫВ ИЗ СОСТОЯНИЯ
+		currentReviewInterface := h.stateManager.GetUserData(userID, "current_review")
+		if currentReviewInterface == nil {
+			h.sendErrorMessage(chatID, "❌ Не найден активный отзыв для модерации")
+			return
+		}
+
+		review, ok := currentReviewInterface.(*models.Review)
+		if !ok || review == nil {
+			h.sendErrorMessage(chatID, "❌ Ошибка данных отзыва")
+			return
+		}
+
+		// ВЫЗЫВАЕМ МЕТОД ОТКЛОНЕНИЯ
+		h.rejectReview(update, review)
 		return
+
 	case "🔙 Назад к списку":
 		// Если нет отзывов, возвращаем в админку
 		pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
@@ -643,78 +697,60 @@ func (h *ReviewHandlers) handleBackToAdmin(update tgbotapi.Update) {
 	}()
 }
 
-// // approveReview одобряет отзыв
-// func (h *ReviewHandlers) approveReview(update tgbotapi.Update) {
-// 	userID := update.Message.From.ID
-// 	userIDStr := strconv.FormatInt(userID, 10)
+// approveReview одобряет отзыв
+func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Review) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
 
-// 	reviewID, ok := h.tempData[userIDStr+"_review_action"].(int)
-// 	if !ok {
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Не найден активный отзыв для модерации")
-// 		h.bot.Send(msg)
-// 		return
-// 	}
+	// Получаем ID модератора из базы
+	moderator, err := h.db.GetUserByTelegramID(userID)
+	if err != nil {
+		h.sendErrorMessage(chatID, "❌ Ошибка: модератор не найден")
+		return
+	}
 
-// 	// Получаем ID модератора из базы
-// 	moderator, err := h.db.GetUserByTelegramID(userID)
-// 	if err != nil {
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка: модератор не найден")
-// 		h.bot.Send(msg)
-// 		return
-// 	}
+	err = h.db.UpdateReviewStatus(review.ID, "approved", moderator.ID)
+	if err != nil {
+		h.sendErrorMessage(chatID, "❌ Ошибка при одобрении отзыва")
+		return
+	}
 
-// 	err = h.db.UpdateReviewStatus(reviewID, "approved", moderator.ID) // Добавлен moderator.ID
-// 	if err != nil {
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-// 			fmt.Sprintf("❌ Ошибка при одобрении отзыва: %v", err))
-// 		h.bot.Send(msg)
-// 		return
-// 	}
+	// Очищаем состояние
+	h.stateManager.ClearUserState(userID)
+	h.stateManager.ClearUserData(userID)
 
-// 	// Очищаем временные данные
-// 	delete(h.tempData, userIDStr+"_review_action")
+	msg := tgbotapi.NewMessage(chatID, "✅ Отзыв успешно одобрен!")
+	h.bot.Send(msg)
 
-// 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "✅ Отзыв успешно одобрен!")
-// 	h.bot.Send(msg)
+	// Возвращаем к списку отзывов
+	h.HandleReviewModeration(update)
+}
 
-// 	// Возвращаем к списку отзывов
-// 	h.HandleReviewModeration(update)
-// }
+// rejectReview отклоняет отзыв
+func (h *ReviewHandlers) rejectReview(update tgbotapi.Update, review *models.Review) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
 
-// // rejectReview отклоняет отзыв
-// func (h *ReviewHandlers) rejectReview(update tgbotapi.Update) {
-// 	userID := update.Message.From.ID
-// 	userIDStr := strconv.FormatInt(userID, 10)
+	// Получаем ID модератора из базы
+	moderator, err := h.db.GetUserByTelegramID(userID)
+	if err != nil {
+		h.sendErrorMessage(chatID, "❌ Ошибка: модератор не найден")
+		return
+	}
 
-// 	reviewID, ok := h.tempData[userIDStr+"_review_action"].(int)
-// 	if !ok {
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Не найден активный отзыв для модерации")
-// 		h.bot.Send(msg)
-// 		return
-// 	}
+	err = h.db.UpdateReviewStatus(review.ID, "rejected", moderator.ID)
+	if err != nil {
+		h.sendErrorMessage(chatID, "❌ Ошибка при отклонении отзыва")
+		return
+	}
 
-// 	// Получаем ID модератора из базы
-// 	moderator, err := h.db.GetUserByTelegramID(userID)
-// 	if err != nil {
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Ошибка: модератор не найден")
-// 		h.bot.Send(msg)
-// 		return
-// 	}
+	// Очищаем состояние
+	h.stateManager.ClearUserState(userID)
+	h.stateManager.ClearUserData(userID)
 
-// 	err = h.db.UpdateReviewStatus(reviewID, "rejected", moderator.ID) // Добавлен moderator.ID
-// 	if err != nil {
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-// 			fmt.Sprintf("❌ Ошибка при отклонении отзыва: %v", err))
-// 		h.bot.Send(msg)
-// 		return
-// 	}
+	msg := tgbotapi.NewMessage(chatID, "❌ Отзыв отклонен!")
+	h.bot.Send(msg)
 
-// 	// Очищаем временные данные
-// 	delete(h.tempData, userIDStr+"_review_action")
-
-// 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Отзыв отклонен!")
-// 	h.bot.Send(msg)
-
-// 	// Возвращаем к списку отзывов
-// 	h.HandleReviewModeration(update)
-// }
+	// Возвращаем к списку отзывов
+	h.HandleReviewModeration(update)
+}
