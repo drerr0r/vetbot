@@ -414,15 +414,19 @@ func (d *Database) GetVeterinarianByID(id int) (*models.Veterinarian, error) {
 
 	var vet models.Veterinarian
 	var cityID sql.NullInt64
-	var vetID sql.NullInt64
+	var email, description sql.NullString
+	var experienceYears sql.NullInt64
 
 	err := d.db.QueryRow(query, id).Scan(&vet.ID, &vet.FirstName, &vet.LastName, &vet.Phone,
-		&vet.Email, &vet.Description, &vet.ExperienceYears, &vet.IsActive, &cityID, &vet.CreatedAt)
+		&email, &description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 
-	vet.ID = vetID
+	// Заполняем nullable поля
+	vet.Email = email
+	vet.Description = description
+	vet.ExperienceYears = experienceYears
 	vet.CityID = cityID
 
 	// Загружаем информацию о городе если есть

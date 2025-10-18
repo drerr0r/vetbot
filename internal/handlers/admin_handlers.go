@@ -2929,5 +2929,14 @@ func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text stri
 	}
 
 	vet := vets[index-1]
+
+	// Дополнительная проверка валидности ID врача
+	if !vet.ID.Valid {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+			"❌ Ошибка: у выбранного врача невалидный ID. Невозможно редактировать.")
+		h.bot.Send(msg)
+		return
+	}
+
 	h.showVetEditMenu(update, vet)
 }
