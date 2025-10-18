@@ -177,24 +177,42 @@ func (h *MainHandler) handleSearchCommand(update tgbotapi.Update) {
 	}
 }
 
-// handleTextMessage обрабатывает обычные текстовые сообщения
 func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+	text := update.Message.Text
 	state := h.stateManager.GetUserState(userID)
 
-	InfoLog.Printf("User %d state: %s", userID, state)
+	InfoLog.Printf("handleTextMessage: user %d, chat %d, state '%s', text: '%s'",
+		userID, chatID, state, text)
 
-	// Если пользователь в процессе добавления отзыва
-	if strings.HasPrefix(state, "review_") {
-		switch state {
-		case "review_comment":
-			h.reviewHandlers.HandleReviewComment(update, update.Message.Text)
-			return
+	// Отладочная информация о состоянии
+	h.stateManager.DebugUserState(userID)
+
+	// Обработка состояний системы отзывов
+	switch state {
+	case "review_comment":
+		InfoLog.Printf("Processing review comment for user %d, text length: %d", userID, len(text))
+		h.reviewHandlers.HandleReviewComment(update, text)
+		return
+
+	case "review_moderation":
+		InfoLog.Printf("Processing review moderation for user %d", userID)
+		if reviewID, err := strconv.Atoi(strings.TrimSpace(text)); err == nil {
+			h.reviewHandlers.HandleReviewModerationAction(update, reviewID)
+		} else {
+			h.sendErrorMessage(chatID, "Введите числовой ID отзыва")
 		}
+		return
+
+	case "review_moderation_confirm":
+		InfoLog.Printf("Processing review moderation confirmation for user %d", userID)
+		h.reviewHandlers.HandleReviewModerationConfirm(update, text)
+		return
 	}
 
 	// Для обычных пользователей показываем справку
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+	msg := tgbotapi.NewMessage(chatID,
 		"Я понимаю только команды. Используйте /help для списка доступных команд.")
 	h.bot.Send(msg)
 }

@@ -93,15 +93,19 @@ func (h *ReviewHandlers) HandleAddReview(update tgbotapi.Update, vetID int) {
 	h.bot.Send(msg)
 }
 
-// HandleReviewRating обрабатывает выбор рейтинга
+// В HandleReviewRating добавьте логирование:
 func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) {
 	callback := update.CallbackQuery
 	chatID := callback.Message.Chat.ID
 	userID := callback.From.ID
 
+	InfoLog.Printf("HandleReviewRating: user %d selected rating %d", userID, rating)
+
 	// Сохраняем рейтинг и переходим к следующему шагу
 	h.stateManager.SetUserData(userID, "review_rating", rating)
 	h.stateManager.SetUserState(userID, "review_comment")
+
+	InfoLog.Printf("HandleReviewRating: user %d state set to 'review_comment'", userID)
 
 	// Обновляем сообщение
 	editMsg := tgbotapi.NewEditMessageText(chatID, callback.Message.MessageID,
@@ -112,17 +116,22 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 	emptyKeyboard := tgbotapi.NewInlineKeyboardMarkup()
 	editMsg.ReplyMarkup = &emptyKeyboard
 
-	h.bot.Send(editMsg)
+	_, err := h.bot.Send(editMsg)
+	if err != nil {
+		ErrorLog.Printf("Error editing message in HandleReviewRating: %v", err)
+	}
 
 	// Отвечаем на callback
 	callbackConfig := tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Выбрано %d звезд", rating))
 	h.bot.Request(callbackConfig)
 }
 
-// HandleReviewComment обрабатывает ввод комментария
+// В HandleReviewComment добавьте больше логирования:
 func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment string) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
+
+	InfoLog.Printf("HandleReviewComment: user %d submitted comment: %s", userID, comment)
 
 	// Проверяем длину комментария
 	if len(comment) > 500 {
@@ -134,6 +143,7 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	// Получаем сохраненные данные
 	vetID, ok := h.stateManager.GetUserDataInt(userID, "review_vet_id")
 	if !ok {
+		ErrorLog.Printf("HandleReviewComment: review_vet_id not found for user %d", userID)
 		h.sendErrorMessage(chatID, "Ошибка: данные о враче не найдены")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -141,14 +151,19 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 
 	rating, ok := h.stateManager.GetUserDataInt(userID, "review_rating")
 	if !ok {
+		ErrorLog.Printf("HandleReviewComment: review_rating not found for user %d", userID)
 		h.sendErrorMessage(chatID, "Ошибка: данные о рейтинге не найдены")
 		h.stateManager.ClearUserState(userID)
 		return
 	}
 
+	InfoLog.Printf("HandleReviewComment: user %d, vetID %d, rating %d, comment length %d",
+		userID, vetID, rating, len(comment))
+
 	// Получаем ID пользователя из базы
 	user, err := h.db.GetUserByTelegramID(userID)
 	if err != nil {
+		ErrorLog.Printf("HandleReviewComment: user not found in database: %v", err)
 		h.sendErrorMessage(chatID, "Ошибка: пользователь не найден")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -167,6 +182,7 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	// Сохраняем в базу
 	err = h.db.CreateReview(review)
 	if err != nil {
+		ErrorLog.Printf("HandleReviewComment: error saving review: %v", err)
 		h.sendErrorMessage(chatID, "Ошибка при сохранении отзыва")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -175,6 +191,8 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	// Очищаем состояние и данные
 	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
+
+	InfoLog.Printf("HandleReviewComment: review saved successfully for user %d", userID)
 
 	// Отправляем подтверждение
 	msg := tgbotapi.NewMessage(chatID,

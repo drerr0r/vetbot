@@ -86,3 +86,52 @@ func (sm *StateManager) ClearUserData(userID int64) {
 	defer sm.mutex.Unlock()
 	delete(sm.userData, userID)
 }
+
+// Добавьте эти методы в конец файла:
+
+// DebugUserState выводит отладочную информацию о состоянии пользователя
+func (sm *StateManager) DebugUserState(userID int64) {
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
+
+	state := sm.userStates[userID]
+	data := sm.userData[userID]
+
+	InfoLog.Printf("DebugUserState: user %d, state: %s, data: %+v", userID, state, data)
+}
+
+// GetAllUserData возвращает все данные пользователя для отладки
+func (sm *StateManager) GetAllUserData(userID int64) map[string]interface{} {
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
+
+	if sm.userData[userID] == nil {
+		return make(map[string]interface{})
+	}
+
+	// Создаем копию для безопасного использования
+	result := make(map[string]interface{})
+	for k, v := range sm.userData[userID] {
+		result[k] = v
+	}
+	return result
+}
+
+// ClearUserDataByKey очищает конкретный ключ данных пользователя
+func (sm *StateManager) ClearUserDataByKey(userID int64, key string) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	if sm.userData[userID] != nil {
+		delete(sm.userData[userID], key)
+	}
+}
+
+// UserHasState проверяет, есть ли у пользователя состояние
+func (sm *StateManager) UserHasState(userID int64) bool {
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
+
+	_, exists := sm.userStates[userID]
+	return exists
+}
