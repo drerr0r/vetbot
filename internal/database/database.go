@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
@@ -348,30 +349,37 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 			&city.ID, &city.Name, &city.Region, &cityCreatedAt,
 		)
 		if err != nil {
+			// ВМЕСТО continue - логируем ошибку, но создаем базового врача
 			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
-			continue
-		}
 
-		// Заполняем nullable поля
-		vet.ID = vetID
-		vet.Email = email
-		vet.Description = description
-		vet.ExperienceYears = experienceYears
-		vet.CityID = cityID
+			// Создаем врача с минимальными данными для редактирования
+			vet = models.Veterinarian{
+				ID:        vetID,
+				FirstName: "ОШИБКА_ДАННЫХ",
+				LastName:  "Требует_редактирования",
+				Phone:     "Не указан",
+				IsActive:  false, // Автоматически неактивен из-за ошибки
+			}
+		} else {
+			// Нормальное заполнение данных
+			vet.ID = vetID
+			vet.Email = email
+			vet.Description = description
+			vet.ExperienceYears = experienceYears
+			vet.CityID = cityID
 
-		if cityID.Valid && cityCreatedAt.Valid {
-			city.CreatedAt = cityCreatedAt.Time
-			vet.City = &city
-		}
+			if cityID.Valid && cityCreatedAt.Valid {
+				city.CreatedAt = cityCreatedAt.Time
+				vet.City = &city
+			}
 
-		// Загружаем специализации только для валидных ID
-		if vetID.Valid {
-			specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
-			if err == nil {
-				vet.Specializations = specs
+			// Автоматически делаем неактивными врачей с неполными обязательными данными
+			if !d.hasCompleteRequiredData(&vet) {
+				vet.IsActive = false
 			}
 		}
 
+		// Всегда добавляем врача в список, даже с ошибками
 		vets = append(vets, &vet)
 	}
 
@@ -381,6 +389,22 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 
 	log.Printf("Успешно загружено %d врачей", len(vets))
 	return vets, nil
+}
+
+// hasCompleteRequiredData проверяет, что у врача заполнены все обязательные поля
+func (d *Database) hasCompleteRequiredData(vet *models.Veterinarian) bool {
+	// Обязательные поля: имя, фамилия, телефон
+	if strings.TrimSpace(vet.FirstName) == "" {
+		return false
+	}
+	if strings.TrimSpace(vet.LastName) == "" {
+		return false
+	}
+	if strings.TrimSpace(vet.Phone) == "" {
+		return false
+	}
+
+	return true
 }
 
 // GetVeterinarianByID возвращает врача по ID с информацией о городе

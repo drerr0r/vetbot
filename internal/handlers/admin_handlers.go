@@ -688,27 +688,29 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 			status = "❌"
 		}
 
-		// Безопасное отображение имени и фамилии (обрабатываем NULL)
-		firstName := "Не указано"
-		if vet.FirstName != "" {
-			firstName = vet.FirstName
+		// Безопасное отображение имени и фамилии
+		firstName := vet.FirstName
+		if firstName == "" {
+			firstName = "Не указано"
 		}
 
-		lastName := "Не указано"
-		if vet.LastName != "" {
-			lastName = vet.LastName
+		lastName := vet.LastName
+		if lastName == "" {
+			lastName = "Не указано"
 		}
 
-		phone := "Не указан"
-		if vet.Phone != "" {
-			phone = vet.Phone
+		phone := vet.Phone
+		if phone == "" {
+			phone = "Не указан"
 		}
 
 		sb.WriteString(fmt.Sprintf("%s %d. %s %s - %s\n", status, i+1, firstName, lastName, phone))
 
 		// Добавляем информацию о проблемных полях
-		if vet.FirstName == "" || vet.LastName == "" || vet.Phone == "" {
-			sb.WriteString("   ⚠️ *Требует редактирования*\n")
+		if !h.hasCompleteRequiredData(vet) {
+			sb.WriteString("   ⚠️ *Неполные данные (авто-неактивен)*\n")
+		} else if vet.FirstName == "ОШИБКА_ДАННЫХ" {
+			sb.WriteString("   🚨 *ОШИБКА ДАННЫХ - требует срочного редактирования*\n")
 		}
 	}
 
@@ -728,31 +730,24 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 	InfoLog.Printf("✅ Список врачей успешно отправлен пользователю %d", userID)
 }
 
-// handleVetListSelection обрабатывает выбор врача из списка
-func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text string) {
-	// Парсим номер врача
-	index, err := strconv.Atoi(text)
-	if err != nil || index < 1 {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите корректный номер врача")
-		h.bot.Send(msg)
-		return
+// hasCompleteRequiredData проверяет обязательные поля врача
+func (h *AdminHandlers) hasCompleteRequiredData(vet *models.Veterinarian) bool {
+	// Обязательные поля: имя, фамилия, телефон
+	if strings.TrimSpace(vet.FirstName) == "" {
+		return false
+	}
+	if strings.TrimSpace(vet.LastName) == "" {
+		return false
+	}
+	if strings.TrimSpace(vet.Phone) == "" {
+		return false
+	}
+	// Исключаем врачей с ошибкой данных
+	if vet.FirstName == "ОШИБКА_ДАННЫХ" {
+		return false
 	}
 
-	vets, err := h.db.GetAllVeterinarians()
-	if err != nil {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка врачей")
-		h.bot.Send(msg)
-		return
-	}
-
-	if index > len(vets) {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Врач с таким номером не найден")
-		h.bot.Send(msg)
-		return
-	}
-
-	vet := vets[index-1]
-	h.showVetEditMenu(update, vet)
+	return true
 }
 
 // showVetEditMenu показывает меню редактирования врача
@@ -2908,4 +2903,31 @@ func (h *AdminHandlers) IsAdmin(userID int64) bool {
 
 	log.Printf("DEBUG: User %d not found in admin list: %v", userID, h.config.AdminIDs)
 	return false
+}
+
+// handleVetListSelection обрабатывает выбор врача из списка
+func (h *AdminHandlers) handleVetListSelection(update tgbotapi.Update, text string) {
+	// Парсим номер врача
+	index, err := strconv.Atoi(text)
+	if err != nil || index < 1 {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите корректный номер врача")
+		h.bot.Send(msg)
+		return
+	}
+
+	vets, err := h.db.GetAllVeterinarians()
+	if err != nil {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении списка врачей")
+		h.bot.Send(msg)
+		return
+	}
+
+	if index > len(vets) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Врач с таким номером не найден")
+		h.bot.Send(msg)
+		return
+	}
+
+	vet := vets[index-1]
+	h.showVetEditMenu(update, vet)
 }
