@@ -1168,3 +1168,140 @@ func (m *MockDatabase) DebugSpecializationVetsCount() (map[int]int, error) {
 		1: 5, 2: 3, 3: 0, 4: 2, 5: 0, 6: 2, 7: 1,
 	}, nil
 }
+
+// ========== СТАТИСТИЧЕСКИЕ МЕТОДЫ ==========
+
+func (m *MockDatabase) GetActiveClinicCount() (int, error) {
+	count := 0
+	for _, clinic := range m.Clinics {
+		if clinic.IsActive {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *MockDatabase) GetTotalClinicCount() (int, error) {
+	return len(m.Clinics), nil
+}
+
+func (m *MockDatabase) GetActiveVetCount() (int, error) {
+	count := 0
+	for _, vet := range m.Veterinarians {
+		if vet.IsActive {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *MockDatabase) GetTotalVetCount() (int, error) {
+	return len(m.Veterinarians), nil
+}
+
+func (m *MockDatabase) GetUserCount() (int, error) {
+	return len(m.Users), nil
+}
+
+func (m *MockDatabase) GetRequestCount() (int, error) {
+	// Для тестов возвращаем фиктивное значение
+	return 50, nil
+}
+
+func (m *MockDatabase) GetCitiesCount() (int, error) {
+	return len(m.Cities), nil
+}
+
+func (m *MockDatabase) GetVetsCountByCity(cityID int) (int, error) {
+	count := 0
+	for _, vet := range m.Veterinarians {
+		if vet.CityID.Valid && int(vet.CityID.Int64) == cityID {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *MockDatabase) GetClinicsCountByCity(cityID int) (int, error) {
+	count := 0
+	for _, clinic := range m.Clinics {
+		if clinic.CityID.Valid && int(clinic.CityID.Int64) == cityID {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// ========== МЕТОДЫ ДЛЯ УДАЛЕНИЯ ==========
+
+// ========== МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ ПОЛЕЙ ==========
+
+func (m *MockDatabase) UpdateVeterinarianField(vetID int, field string, value interface{}) error {
+	vet, exists := m.Veterinarians[vetID]
+	if !exists {
+		return fmt.Errorf("врач с ID %d не найден", vetID)
+	}
+
+	switch field {
+	case "first_name":
+		vet.FirstName = value.(string)
+	case "last_name":
+		vet.LastName = value.(string)
+	case "phone":
+		vet.Phone = value.(string)
+	case "patronymic":
+		if value == nil {
+			vet.Patronymic = sql.NullString{}
+		} else {
+			vet.Patronymic = sql.NullString{String: value.(string), Valid: true}
+		}
+	case "email":
+		if value == nil {
+			vet.Email = sql.NullString{}
+		} else {
+			vet.Email = sql.NullString{String: value.(string), Valid: true}
+		}
+	case "experience_years":
+		if value == nil {
+			vet.ExperienceYears = sql.NullInt64{}
+		} else {
+			vet.ExperienceYears = sql.NullInt64{Int64: int64(value.(int)), Valid: true}
+		}
+	case "is_active":
+		vet.IsActive = value.(bool)
+	default:
+		return fmt.Errorf("неизвестное поле: %s", field)
+	}
+	return nil
+}
+
+func (m *MockDatabase) UpdateClinicField(clinicID int, field string, value interface{}) error {
+	clinic, exists := m.Clinics[clinicID]
+	if !exists {
+		return fmt.Errorf("клиника с ID %d не найдена", clinicID)
+	}
+
+	switch field {
+	case "name":
+		clinic.Name = value.(string)
+	case "address":
+		clinic.Address = value.(string)
+	case "phone":
+		if value == nil {
+			clinic.Phone = sql.NullString{}
+		} else {
+			clinic.Phone = sql.NullString{String: value.(string), Valid: true}
+		}
+	case "working_hours":
+		if value == nil {
+			clinic.WorkingHours = sql.NullString{}
+		} else {
+			clinic.WorkingHours = sql.NullString{String: value.(string), Valid: true}
+		}
+	case "is_active":
+		clinic.IsActive = value.(bool)
+	default:
+		return fmt.Errorf("неизвестное поле: %s", field)
+	}
+	return nil
+}

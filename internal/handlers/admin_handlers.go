@@ -437,8 +437,8 @@ func (h *AdminHandlers) showVetManagement(update tgbotapi.Update) {
 	h.adminState[userID] = "vet_management"
 
 	// Получаем статистику врачей
-	activeVets, _ := h.getActiveVetCount()
-	totalVets, _ := h.getTotalVetCount()
+	activeVets, _ := h.db.GetActiveVetCount()
+	totalVets, _ := h.db.GetTotalVetCount()
 
 	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
@@ -688,15 +688,23 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 			status = "❌"
 		}
 
-		// Безопасное отображение имени и фамилии
-		firstName := vet.FirstName
-		if firstName == "" {
-			firstName = "Не указано"
-		}
-
-		lastName := vet.LastName
-		if lastName == "" {
-			lastName = "Не указано"
+		// Формируем полное ФИО для отображения
+		var displayName string
+		if vet.Patronymic.Valid && vet.Patronymic.String != "" {
+			// Формат: Фамилия И.О.
+			var initialsBuilder strings.Builder
+			if vet.FirstName != "" {
+				initialsBuilder.WriteString(string([]rune(vet.FirstName)[0]))
+				initialsBuilder.WriteString(".")
+			}
+			if vet.Patronymic.String != "" {
+				initialsBuilder.WriteString(string([]rune(vet.Patronymic.String)[0]))
+				initialsBuilder.WriteString(".")
+			}
+			displayName = vet.LastName + " " + initialsBuilder.String()
+		} else {
+			// Простой формат: Имя Фамилия
+			displayName = vet.FirstName + " " + vet.LastName
 		}
 
 		phone := vet.Phone
@@ -704,12 +712,22 @@ func (h *AdminHandlers) showVetList(update tgbotapi.Update) {
 			phone = "Не указан"
 		}
 
-		sb.WriteString(fmt.Sprintf("%s %d. %s %s - %s\n", status, i+1, firstName, lastName, phone))
+		// Исправлено: убраны ненужные fmt.Sprintf
+		sb.WriteString(status)
+		sb.WriteString(" ")
+		sb.WriteString(strconv.Itoa(i + 1))
+		sb.WriteString(". ")
+		sb.WriteString(displayName)
+		sb.WriteString(" - ")
+		sb.WriteString(phone)
+		sb.WriteString("\n")
 
 		// Добавляем информацию о проблемных полях
 		missingFields := h.getMissingRequiredFields(vet)
 		if len(missingFields) > 0 {
-			sb.WriteString(fmt.Sprintf("   ⚠️ *Не заполнено:* %s\n", strings.Join(missingFields, ", ")))
+			sb.WriteString("   ⚠️ *Не заполнено:* ")
+			sb.WriteString(strings.Join(missingFields, ", "))
+			sb.WriteString("\n")
 		} else if vet.FirstName == "ОШИБКА_ДАННЫХ" {
 			sb.WriteString("   🚨 *ОШИБКА ДАННЫХ - требует срочного редактирования*\n")
 		}
@@ -777,7 +795,32 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 	missingFields := h.getMissingRequiredFields(vet)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("👨‍⚕️ *Управление врачом:* %s %s\n\n", vet.FirstName, vet.LastName))
+
+	// Формируем полное ФИО
+	fullName := fmt.Sprintf("%s %s", vet.FirstName, vet.LastName)
+	if vet.Patronymic.Valid && vet.Patronymic.String != "" {
+		fullName = fmt.Sprintf("%s %s %s", vet.LastName, vet.FirstName, vet.Patronymic.String)
+	}
+
+	sb.WriteString(fmt.Sprintf("👨‍⚕️ *Управление врачом:* %s\n\n", fullName))
+
+	sb.WriteString(fmt.Sprintf("👤 Имя: %s", vet.FirstName))
+	if strings.TrimSpace(vet.FirstName) == "" {
+		sb.WriteString(" ❌")
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString(fmt.Sprintf("👤 Фамилия: %s", vet.LastName))
+	if strings.TrimSpace(vet.LastName) == "" {
+		sb.WriteString(" ❌")
+	}
+	sb.WriteString("\n")
+
+	if vet.Patronymic.Valid && vet.Patronymic.String != "" {
+		sb.WriteString(fmt.Sprintf("👤 Отчество: %s\n", vet.Patronymic.String))
+	} else {
+		sb.WriteString("👤 Отчество: Не указано\n")
+	}
 
 	sb.WriteString(fmt.Sprintf("📞 Телефон: %s", vet.Phone))
 	if strings.TrimSpace(vet.Phone) == "" {
@@ -785,7 +828,7 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 	}
 	sb.WriteString("\n")
 
-	if vet.Email.Valid {
+	if vet.Email.Valid && vet.Email.String != "" {
 		sb.WriteString(fmt.Sprintf("📧 Email: %s\n", vet.Email.String))
 	} else {
 		sb.WriteString("📧 Email: Не указан\n")
@@ -820,6 +863,10 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("✏️ Редактировать имя"),
+			tgbotapi.NewKeyboardButton("👤 Редактировать фамилию"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("👤 Редактировать отчество"), // НОВАЯ КНОПКА
 			tgbotapi.NewKeyboardButton("📞 Редактировать телефон"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
@@ -850,14 +897,12 @@ func (h *AdminHandlers) showVetEditMenu(update tgbotapi.Update, vet *models.Vete
 func (h *AdminHandlers) getMissingRequiredFields(vet *models.Veterinarian) []string {
 	var missing []string
 
+	// Проверяем только имя и фамилию (телефон уже заполнен)
 	if strings.TrimSpace(vet.FirstName) == "" {
 		missing = append(missing, "Имя")
 	}
 	if strings.TrimSpace(vet.LastName) == "" {
 		missing = append(missing, "Фамилия")
-	}
-	if strings.TrimSpace(vet.Phone) == "" {
-		missing = append(missing, "Телефон")
 	}
 
 	return missing
@@ -891,6 +936,22 @@ func (h *AdminHandlers) handleVetEditMenu(update tgbotapi.Update, text string) {
 		vetData.Field = "first_name"
 		vetData.CurrentValue = vet.FirstName
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите новое имя врача:")
+		h.bot.Send(msg)
+
+	case "👤 Редактировать фамилию":
+		h.adminState[userID] = "vet_edit_field"
+		vetData.Field = "last_name"
+		vetData.CurrentValue = vet.LastName
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите новую фамилию врача:")
+		h.bot.Send(msg)
+
+	case "👤 Редактировать отчество": // НОВЫЙ CASE
+		h.adminState[userID] = "vet_edit_field"
+		vetData.Field = "patronymic"
+		if vet.Patronymic.Valid {
+			vetData.CurrentValue = vet.Patronymic.String
+		}
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите отчество врача (или '-' для очистки):")
 		h.bot.Send(msg)
 
 	case "📞 Редактировать телефон":
@@ -1019,7 +1080,6 @@ func (h *AdminHandlers) handleVetEditField(update tgbotapi.Update, text string) 
 	if text == "-" {
 		text = "" // Очистка поля
 	}
-
 	// Обновляем поле в базе данных
 	err := h.updateVeterinarianField(vetData.VetID, vetData.Field, text)
 	if err != nil {
@@ -1038,6 +1098,63 @@ func (h *AdminHandlers) handleVetEditField(update tgbotapi.Update, text string) 
 	} else {
 		h.showVetList(update)
 	}
+}
+
+// updateVeterinarianField обновляет поле врача в базе данных
+func (h *AdminHandlers) updateVeterinarianField(vetID int, field string, value string) error {
+	var query string
+	var err error
+
+	switch field {
+	case "first_name":
+		query = "UPDATE veterinarians SET first_name = $1 WHERE id = $2"
+		_, err = h.db.GetDB().Exec(query, value, vetID)
+	case "last_name": // ДОБАВЛЕНО
+		query = "UPDATE veterinarians SET last_name = $1 WHERE id = $2"
+		_, err = h.db.GetDB().Exec(query, value, vetID)
+	case "patronymic": // ДОБАВЛЕНО
+		if value == "" || value == "-" {
+			query = "UPDATE veterinarians SET patronymic = NULL WHERE id = $1"
+			_, err = h.db.GetDB().Exec(query, vetID)
+		} else {
+			query = "UPDATE veterinarians SET patronymic = $1 WHERE id = $2"
+			_, err = h.db.GetDB().Exec(query, value, vetID)
+		}
+	case "phone":
+		query = "UPDATE veterinarians SET phone = $1 WHERE id = $2"
+		_, err = h.db.GetDB().Exec(query, value, vetID)
+	case "email":
+		if value == "" {
+			query = "UPDATE veterinarians SET email = NULL WHERE id = $1"
+			_, err = h.db.GetDB().Exec(query, vetID)
+		} else {
+			query = "UPDATE veterinarians SET email = $1 WHERE id = $2"
+			_, err = h.db.GetDB().Exec(query, value, vetID)
+		}
+	case "experience_years":
+		if value == "" {
+			query = "UPDATE veterinarians SET experience_years = NULL WHERE id = $1"
+			_, err = h.db.GetDB().Exec(query, vetID)
+		} else {
+			exp, convErr := strconv.ParseInt(value, 10, 64)
+			if convErr != nil {
+				return convErr
+			}
+			query = "UPDATE veterinarians SET experience_years = $1 WHERE id = $2"
+			_, err = h.db.GetDB().Exec(query, exp, vetID)
+		}
+	case "is_active":
+		active, convErr := strconv.ParseBool(value)
+		if convErr != nil {
+			return convErr
+		}
+		query = "UPDATE veterinarians SET is_active = $1 WHERE id = $2"
+		_, err = h.db.GetDB().Exec(query, active, vetID)
+	default:
+		return fmt.Errorf("unknown field: %s", field)
+	}
+
+	return err
 }
 
 // handleVetEditSpecializations обрабатывает ввод специализаций врача
@@ -1526,8 +1643,8 @@ func (h *AdminHandlers) startAddClinic(update tgbotapi.Update) {
 // showSettings показывает настройки
 func (h *AdminHandlers) showSettings(update tgbotapi.Update) {
 	userCount, _ := h.getUserCount()
-	activeVets, _ := h.getActiveVetCount()
-	totalVets, _ := h.getTotalVetCount()
+	activeVets, _ := h.db.GetActiveVetCount()
+	totalVets, _ := h.db.GetTotalVetCount()
 	activeClinics, _ := h.getActiveClinicCount()
 	totalClinics, _ := h.getTotalClinicCount()
 
@@ -1548,8 +1665,8 @@ func (h *AdminHandlers) showSettings(update tgbotapi.Update) {
 // HandleStats показывает статистику бота
 func (h *AdminHandlers) HandleStats(update tgbotapi.Update) {
 	userCount, _ := h.getUserCount()
-	activeVets, _ := h.getActiveVetCount()
-	totalVets, _ := h.getTotalVetCount()
+	activeVets, _ := h.db.GetActiveVetCount()
+	totalVets, _ := h.db.GetTotalVetCount()
 	activeClinics, _ := h.getActiveClinicCount()
 	totalClinics, _ := h.getTotalClinicCount()
 	requestCount, _ := h.getRequestCount()
@@ -1663,52 +1780,6 @@ func (h *AdminHandlers) addVeterinarian(vet *models.Veterinarian, specsText stri
 	}
 
 	return nil
-}
-
-// updateVeterinarianField обновляет поле врача в базе данных
-func (h *AdminHandlers) updateVeterinarianField(vetID int, field string, value string) error {
-	var query string
-	var err error
-
-	switch field {
-	case "first_name":
-		query = "UPDATE veterinarians SET first_name = $1 WHERE id = $2"
-		_, err = h.db.GetDB().Exec(query, value, vetID)
-	case "phone":
-		query = "UPDATE veterinarians SET phone = $1 WHERE id = $2"
-		_, err = h.db.GetDB().Exec(query, value, vetID)
-	case "email":
-		if value == "" {
-			query = "UPDATE veterinarians SET email = NULL WHERE id = $1"
-			_, err = h.db.GetDB().Exec(query, vetID)
-		} else {
-			query = "UPDATE veterinarians SET email = $1 WHERE id = $2"
-			_, err = h.db.GetDB().Exec(query, value, vetID)
-		}
-	case "experience_years":
-		if value == "" {
-			query = "UPDATE veterinarians SET experience_years = NULL WHERE id = $1"
-			_, err = h.db.GetDB().Exec(query, vetID)
-		} else {
-			exp, convErr := strconv.ParseInt(value, 10, 64)
-			if convErr != nil {
-				return convErr
-			}
-			query = "UPDATE veterinarians SET experience_years = $1 WHERE id = $2"
-			_, err = h.db.GetDB().Exec(query, exp, vetID)
-		}
-	case "is_active":
-		active, convErr := strconv.ParseBool(value)
-		if convErr != nil {
-			return convErr
-		}
-		query = "UPDATE veterinarians SET is_active = $1 WHERE id = $2"
-		_, err = h.db.GetDB().Exec(query, active, vetID)
-	default:
-		return fmt.Errorf("unknown field: %s", field)
-	}
-
-	return err
 }
 
 // updateVeterinarianSpecializations обновляет специализации врача
@@ -1836,19 +1907,19 @@ func (h *AdminHandlers) getUserCount() (int, error) {
 	return count, err
 }
 
-func (h *AdminHandlers) getActiveVetCount() (int, error) {
-	query := "SELECT COUNT(*) FROM veterinarians WHERE is_active = true"
-	var count int
-	err := h.db.GetDB().QueryRow(query).Scan(&count)
-	return count, err
-}
+// func (h *AdminHandlers) getActiveVetCount() (int, error) {
+// 	query := "SELECT COUNT(*) FROM veterinarians WHERE is_active = true"
+// 	var count int
+// 	err := h.db.GetDB().QueryRow(query).Scan(&count)
+// 	return count, err
+// }
 
-func (h *AdminHandlers) getTotalVetCount() (int, error) {
-	query := "SELECT COUNT(*) FROM veterinarians"
-	var count int
-	err := h.db.GetDB().QueryRow(query).Scan(&count)
-	return count, err
-}
+// func (h *AdminHandlers) getTotalVetCount() (int, error) {
+// 	query := "SELECT COUNT(*) FROM veterinarians"
+// 	var count int
+// 	err := h.db.GetDB().QueryRow(query).Scan(&count)
+// 	return count, err
+// }
 
 func (h *AdminHandlers) getActiveClinicCount() (int, error) {
 	query := "SELECT COUNT(*) FROM clinics WHERE is_active = true"

@@ -74,4 +74,21 @@ type Database interface {
 
 	// Дебаг
 	DebugSpecializationVetsCount() (map[int]int, error)
+
+	// НОВЫЕ МЕТОДЫ ДЛЯ АДМИН-ПАНЕЛИ И СТАТИСТИКИ
+	GetActiveClinicCount() (int, error)
+	GetTotalClinicCount() (int, error)
+	GetActiveVetCount() (int, error)
+	GetTotalVetCount() (int, error)
+	GetUserCount() (int, error)
+	GetRequestCount() (int, error)
+
+	// Методы для удаления
+	DeleteClinic(clinicID int) error
+	DeleteVeterinarian(vetID int) error
+
+	// Методы для статистики городов
+	GetCitiesCount() (int, error)
+	GetVetsCountByCity(cityID int) (int, error)
+	GetClinicsCountByCity(cityID int) (int, error)
 }

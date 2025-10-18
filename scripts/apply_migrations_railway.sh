@@ -13,8 +13,8 @@ fi
 
 echo "📝 Checking for database migrations..."
 
-# Применяем миграции по порядку
-for migration_file in migrations/*.sql; do
+# Применяем миграции по порядку (сортировка по номеру)
+for migration_file in $(ls migrations/*.sql | sort -V); do
     if [ -f "$migration_file" ]; then
         echo "📝 Applying migration: $migration_file"
         psql $DATABASE_URL -f "$migration_file" 

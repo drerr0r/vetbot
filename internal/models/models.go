@@ -29,6 +29,7 @@ type Veterinarian struct {
 	ID              sql.NullInt64     `json:"id"`
 	FirstName       string            `json:"first_name"`
 	LastName        string            `json:"last_name"`
+	Patronymic      sql.NullString    `json:"patronymic"`
 	Phone           string            `json:"phone"`
 	Email           sql.NullString    `json:"email"`
 	Description     sql.NullString    `json:"description"`

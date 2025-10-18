@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -318,9 +319,8 @@ func (d *Database) FindAvailableVets(criteria *models.SearchCriteria) ([]*models
 
 // ========== НОВЫЕ МЕТОДЫ ДЛЯ АДМИНКИ ==========
 
-// GetAllVeterinarians возвращает всех врачей с информацией о городах
 func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
-	query := `SELECT v.id, v.first_name, v.last_name, v.phone, v.email, v.description, 
+	query := `SELECT v.id, v.first_name, v.last_name, v.patronymic, v.phone, v.email, v.description, 
                      v.experience_years, v.is_active, v.city_id, v.created_at,
                      c.id, c.name, c.region, c.created_at
               FROM veterinarians v
@@ -339,47 +339,43 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		var cityID sql.NullInt64
 		var city models.City
 		var cityCreatedAt sql.NullTime
-		var email, description sql.NullString
+		var email, description, patronymic sql.NullString
 		var experienceYears sql.NullInt64
 		var vetID sql.NullInt64
 
 		err := rows.Scan(
-			&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
+			&vetID, &vet.FirstName, &vet.LastName, &patronymic, &vet.Phone, &email,
 			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
 			&city.ID, &city.Name, &city.Region, &cityCreatedAt,
 		)
 		if err != nil {
-			// ВМЕСТО continue - логируем ошибку, но создаем базового врача
 			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
 
-			// Создаем врача с минимальными данными для редактирования
 			vet = models.Veterinarian{
 				ID:        vetID,
 				FirstName: "ОШИБКА_ДАННЫХ",
 				LastName:  "Требует_редактирования",
 				Phone:     "Не указан",
-				IsActive:  false, // Автоматически неактивен из-за ошибки
+				IsActive:  false,
 			}
 		} else {
-			// Нормальное заполнение данных
 			vet.ID = vetID
 			vet.Email = email
 			vet.Description = description
 			vet.ExperienceYears = experienceYears
 			vet.CityID = cityID
+			vet.Patronymic = patronymic // НОВОЕ ПОЛЕ
 
 			if cityID.Valid && cityCreatedAt.Valid {
 				city.CreatedAt = cityCreatedAt.Time
 				vet.City = &city
 			}
 
-			// Автоматически делаем неактивными врачей с неполными обязательными данными
 			if !d.hasCompleteRequiredData(&vet) {
 				vet.IsActive = false
 			}
 		}
 
-		// Всегда добавляем врача в список, даже с ошибками
 		vets = append(vets, &vet)
 	}
 
@@ -970,4 +966,270 @@ func (d *Database) DebugSpecializationVetsCount() (map[int]int, error) {
 	}
 
 	return result, nil
+}
+
+// ========== СТАТИСТИЧЕСКИЕ МЕТОДЫ ==========
+
+// GetActiveClinicCount возвращает количество активных клиник
+func (db *Database) GetActiveClinicCount() (int, error) {
+	query := "SELECT COUNT(*) FROM clinics WHERE is_active = true"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества активных клиник: %v", err)
+	}
+	return count, nil
+}
+
+// GetTotalClinicCount возвращает общее количество клиник
+func (db *Database) GetTotalClinicCount() (int, error) {
+	query := "SELECT COUNT(*) FROM clinics"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения общего количества клиник: %v", err)
+	}
+	return count, nil
+}
+
+// GetActiveVetCount возвращает количество активных врачей
+func (db *Database) GetActiveVetCount() (int, error) {
+	query := "SELECT COUNT(*) FROM veterinarians WHERE is_active = true"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества активных врачей: %v", err)
+	}
+	return count, nil
+}
+
+// GetTotalVetCount возвращает общее количество врачей
+func (db *Database) GetTotalVetCount() (int, error) {
+	query := "SELECT COUNT(*) FROM veterinarians"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения общего количества врачей: %v", err)
+	}
+	return count, nil
+}
+
+// GetUserCount возвращает количество пользователей
+func (db *Database) GetUserCount() (int, error) {
+	query := "SELECT COUNT(*) FROM users"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества пользователей: %v", err)
+	}
+	return count, nil
+}
+
+// GetRequestCount возвращает количество запросов
+func (db *Database) GetRequestCount() (int, error) {
+	query := "SELECT COUNT(*) FROM user_requests"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества запросов: %v", err)
+	}
+	return count, nil
+}
+
+// GetCitiesCount возвращает количество городов
+func (db *Database) GetCitiesCount() (int, error) {
+	query := "SELECT COUNT(*) FROM cities"
+	var count int
+	err := db.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества городов: %v", err)
+	}
+	return count, nil
+}
+
+// GetVetsCountByCity возвращает количество врачей в городе
+func (db *Database) GetVetsCountByCity(cityID int) (int, error) {
+	query := "SELECT COUNT(*) FROM veterinarians WHERE city_id = $1"
+	var count int
+	err := db.db.QueryRow(query, cityID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества врачей в городе: %v", err)
+	}
+	return count, nil
+}
+
+// GetClinicsCountByCity возвращает количество клиник в городе
+func (db *Database) GetClinicsCountByCity(cityID int) (int, error) {
+	query := "SELECT COUNT(*) FROM clinics WHERE city_id = $1"
+	var count int
+	err := db.db.QueryRow(query, cityID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка получения количества клиник в городе: %v", err)
+	}
+	return count, nil
+}
+
+// ========== МЕТОДЫ ДЛЯ УДАЛЕНИЯ ==========
+
+// ========== МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ ПОЛЕЙ ==========
+
+// UpdateVeterinarianField обновляет конкретное поле врача
+func (db *Database) UpdateVeterinarianField(vetID int, field string, value interface{}) error {
+	var query string
+	var args []interface{}
+
+	switch field {
+	case "first_name", "last_name", "phone":
+		query = fmt.Sprintf("UPDATE veterinarians SET %s = $1 WHERE id = $2", field)
+		args = []interface{}{value, vetID}
+	case "patronymic", "email", "description":
+		if value == nil || value == "" {
+			query = fmt.Sprintf("UPDATE veterinarians SET %s = NULL WHERE id = $1", field)
+			args = []interface{}{vetID}
+		} else {
+			query = fmt.Sprintf("UPDATE veterinarians SET %s = $1 WHERE id = $2", field)
+			args = []interface{}{value, vetID}
+		}
+	case "experience_years":
+		if value == nil {
+			query = "UPDATE veterinarians SET experience_years = NULL WHERE id = $1"
+			args = []interface{}{vetID}
+		} else {
+			query = "UPDATE veterinarians SET experience_years = $1 WHERE id = $2"
+			args = []interface{}{value, vetID}
+		}
+	case "is_active":
+		query = "UPDATE veterinarians SET is_active = $1 WHERE id = $2"
+		args = []interface{}{value, vetID}
+	case "city_id":
+		if value == nil {
+			query = "UPDATE veterinarians SET city_id = NULL WHERE id = $1"
+			args = []interface{}{vetID}
+		} else {
+			query = "UPDATE veterinarians SET city_id = $1 WHERE id = $2"
+			args = []interface{}{value, vetID}
+		}
+	default:
+		return fmt.Errorf("неизвестное поле: %s", field)
+	}
+
+	result, err := db.db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("ошибка обновления поля %s: %v", field, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка проверки обновленных строк: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("врач с ID %d не найден", vetID)
+	}
+
+	return nil
+}
+
+// UpdateClinicField обновляет конкретное поле клиники
+func (db *Database) UpdateClinicField(clinicID int, field string, value interface{}) error {
+	var query string
+	var args []interface{}
+
+	switch field {
+	case "name", "address":
+		query = fmt.Sprintf("UPDATE clinics SET %s = $1 WHERE id = $2", field)
+		args = []interface{}{value, clinicID}
+	case "phone", "working_hours":
+		if value == nil || value == "" {
+			query = fmt.Sprintf("UPDATE clinics SET %s = NULL WHERE id = $1", field)
+			args = []interface{}{clinicID}
+		} else {
+			query = fmt.Sprintf("UPDATE clinics SET %s = $1 WHERE id = $2", field)
+			args = []interface{}{value, clinicID}
+		}
+	case "is_active":
+		query = "UPDATE clinics SET is_active = $1 WHERE id = $2"
+		args = []interface{}{value, clinicID}
+	case "city_id":
+		if value == nil {
+			query = "UPDATE clinics SET city_id = NULL WHERE id = $1"
+			args = []interface{}{clinicID}
+		} else {
+			query = "UPDATE clinics SET city_id = $1 WHERE id = $2"
+			args = []interface{}{value, clinicID}
+		}
+	default:
+		return fmt.Errorf("неизвестное поле: %s", field)
+	}
+
+	result, err := db.db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("ошибка обновления поля %s: %v", field, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка проверки обновленных строк: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("клиника с ID %d не найдена", clinicID)
+	}
+
+	return nil
+}
+
+// DeleteClinic удаляет клинику
+func (db *Database) DeleteClinic(clinicID int) error {
+	query := "DELETE FROM clinics WHERE id = $1"
+	result, err := db.db.ExecContext(context.Background(), query, clinicID)
+	if err != nil {
+		return fmt.Errorf("ошибка при удалении клиники: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка при проверке удаленных строк: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("клиника с ID %d не найдена", clinicID)
+	}
+
+	return nil
+}
+
+// DeleteVeterinarian удаляет ветеринара
+func (db *Database) DeleteVeterinarian(vetID int) error {
+	// Сначала удаляем связанные записи из таблицы связей
+	deleteSpecsQuery := "DELETE FROM veterinarian_specializations WHERE veterinarian_id = $1"
+	_, err := db.db.ExecContext(context.Background(), deleteSpecsQuery, vetID)
+	if err != nil {
+		return fmt.Errorf("ошибка при удалении специализаций врача: %v", err)
+	}
+
+	// Затем удаляем расписание
+	deleteScheduleQuery := "DELETE FROM schedules WHERE vet_id = $1"
+	_, err = db.db.ExecContext(context.Background(), deleteScheduleQuery, vetID)
+	if err != nil {
+		return fmt.Errorf("ошибка при удалении расписания врача: %v", err)
+	}
+
+	// Затем удаляем самого ветеринара
+	deleteVetQuery := "DELETE FROM veterinarians WHERE id = $1"
+	result, err := db.db.ExecContext(context.Background(), deleteVetQuery, vetID)
+	if err != nil {
+		return fmt.Errorf("ошибка при удалении ветеринара: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка при проверке удаленных строк: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("ветеринар с ID %d не найден", vetID)
+	}
+
+	return nil
 }
