@@ -256,14 +256,32 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 
 	log.Printf("HandleReviewComment: review saved successfully for user %d, review ID: %d", userID, review.ID)
 
-	// Отправляем подтверждение
+	// Уведомляем администраторов о новом отзыве
+	h.notifyAdminsAboutNewReview(review)
+
+	// Отправляем подтверждение пользователю
 	msg := tgbotapi.NewMessage(chatID,
 		"✅ *Отзыв успешно отправлен!*\n\nВаш отзыв будет опубликован после проверки модератором. Спасибо за ваш вклад!")
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
 
-	// Уведомляем администраторов о новом отзыве
-	h.notifyAdminsAboutNewReview(review)
+	// ПОКАЗЫВАЕМ ГЛАВНОЕ МЕНЮ КАК В /start
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔍 Найти врача", "main_specializations"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🏥 Клиники", "main_clinics"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
+		),
+	)
+
+	menuMsg := tgbotapi.NewMessage(chatID, "🏠 *Главное меню*\n\nВыберите действие:")
+	menuMsg.ParseMode = "Markdown"
+	menuMsg.ReplyMarkup = keyboard
+	h.bot.Send(menuMsg)
 }
 
 // getUserReviewForVet возвращает ЛЮБОЙ отзыв пользователя на врача (любого статуса)
