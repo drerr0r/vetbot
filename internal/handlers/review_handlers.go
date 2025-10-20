@@ -580,6 +580,18 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 
 	InfoLog.Printf("ReviewModerationInput: user %d, text: '%s'", userID, text)
 
+	// ДЛЯ ОТЛАДКИ: посмотрим все данные пользователя
+	allData := h.stateManager.GetAllUserData(userID)
+	InfoLog.Printf("🔍 ReviewModerationInput USER DATA: %+v", allData)
+
+	// Проверяем current_review ДО обработки команд
+	currentReviewInterface := h.stateManager.GetUserData(userID, "current_review")
+	if currentReviewInterface == nil {
+		InfoLog.Printf("🔍 ReviewModerationInput: current_review is NIL for user %d", userID)
+	} else {
+		InfoLog.Printf("🔍 ReviewModerationInput: current_review FOUND for user %d", userID)
+	}
+
 	// ПРОВЕРЯЕМ КОМАНДЫ АДМИНКИ ПЕРВЫМИ
 	adminCommands := map[string]func(){
 		"🔙 Назад в админку": func() { h.handleBackToAdmin(update) },
@@ -645,12 +657,13 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 		return
 
 	case "🔙 Назад к списку":
-		// Если нет отзывов, возвращаем в админку
+		// НЕ вызываем HandleReviewModeration, а просто показываем список
 		pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
 		if pendingReviewsInterface == nil {
 			h.handleBackToAdmin(update)
 		} else {
-			h.HandleReviewModeration(update)
+			// Просто показываем список, не перезагружая данные
+			h.showReviewList(update, pendingReviewsInterface.([]*models.Review))
 		}
 		return
 	}
@@ -695,10 +708,66 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 	h.showReviewForModeration(update, foundReview)
 }
 
+// showReviewList показывает список отзывов без перезагрузки из базы
+func (h *ReviewHandlers) showReviewList(update tgbotapi.Update, pendingReviews []*models.Review) {
+	chatID := update.Message.Chat.ID
+
+	var message strings.Builder
+	message.WriteString("⚡ *Модерация отзывов*\n\n")
+	message.WriteString(fmt.Sprintf("Отзывов на модерации: %d\n\n", len(pendingReviews)))
+
+	for i, review := range pendingReviews {
+		if i >= 5 {
+			message.WriteString(fmt.Sprintf("\n... и еще %d отзывов", len(pendingReviews)-5))
+			break
+		}
+
+		message.WriteString(fmt.Sprintf("**%d. %s %s**\n", i+1,
+			html.EscapeString(review.Veterinarian.FirstName),
+			html.EscapeString(review.Veterinarian.LastName)))
+		message.WriteString(fmt.Sprintf("⭐ Оценка: %d/5\n", review.Rating))
+		message.WriteString(fmt.Sprintf("💬 Отзыв: %s\n", html.EscapeString(review.Comment)))
+		if review.User != nil {
+			message.WriteString(fmt.Sprintf("👤 Пользователь: %s\n", html.EscapeString(review.User.FirstName)))
+		}
+		message.WriteString(fmt.Sprintf("📅 Дата: %s\n", review.CreatedAt.Format("02.01.2006")))
+		message.WriteString(fmt.Sprintf("🆔 ID отзыва: %d\n\n", review.ID))
+	}
+
+	message.WriteString("Введите ID отзыва для модерации:")
+
+	keyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔙 Назад в админку"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, message.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+	h.bot.Send(msg)
+}
+
 // showReviewForModeration показывает отзыв с кнопками одобрить/отклонить
 func (h *ReviewHandlers) showReviewForModeration(update tgbotapi.Update, review *models.Review) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
+
+	InfoLog.Printf("🔍 showReviewForModeration: user %d, saving review ID %d to current_review", userID, review.ID)
+
+	// ВАЖНО: Сохраняем ВЕСЬ объект отзыва, а не только ID
+	h.stateManager.SetUserData(userID, "current_review", review)
+
+	// ДЛЯ ОТЛАДКИ
+	h.stateManager.PrintDebugInfo(userID)
+
+	// ДЛЯ ОТЛАДКИ: сразу проверим, что сохранилось
+	savedReview := h.stateManager.GetUserData(userID, "current_review")
+	if savedReview == nil {
+		ErrorLog.Printf("❌ showReviewForModeration: FAILED to save review for user %d", userID)
+	} else {
+		InfoLog.Printf("✅ showReviewForModeration: successfully saved review for user %d", userID)
+	}
 
 	var message strings.Builder
 	message.WriteString("📝 *Отзыв для модерации*\n\n")
@@ -783,15 +852,19 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 		return
 	}
 
-	// Очищаем состояние
-	h.stateManager.ClearUserState(userID)
-	h.stateManager.ClearUserData(userID)
+	// Очищаем ТОЛЬКО current_review, сохраняя pending_reviews
+	h.stateManager.ClearUserDataByKey(userID, "current_review")
 
 	msg := tgbotapi.NewMessage(chatID, "✅ Отзыв успешно одобрен!")
 	h.bot.Send(msg)
 
-	// Возвращаем к списку отзывов
-	h.HandleReviewModeration(update)
+	// Возвращаем к списку отзывов БЕЗ перезагрузки
+	pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
+	if pendingReviewsInterface != nil {
+		h.showReviewList(update, pendingReviewsInterface.([]*models.Review))
+	} else {
+		h.HandleReviewModeration(update)
+	}
 }
 
 // rejectReview отклоняет отзыв
@@ -812,13 +885,17 @@ func (h *ReviewHandlers) rejectReview(update tgbotapi.Update, review *models.Rev
 		return
 	}
 
-	// Очищаем состояние
-	h.stateManager.ClearUserState(userID)
-	h.stateManager.ClearUserData(userID)
+	// Очищаем ТОЛЬКО current_review, сохраняя pending_reviews
+	h.stateManager.ClearUserDataByKey(userID, "current_review")
 
 	msg := tgbotapi.NewMessage(chatID, "❌ Отзыв отклонен!")
 	h.bot.Send(msg)
 
-	// Возвращаем к списку отзывов
-	h.HandleReviewModeration(update)
+	// Возвращаем к списку отзывов БЕЗ перезагрузки
+	pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
+	if pendingReviewsInterface != nil {
+		h.showReviewList(update, pendingReviewsInterface.([]*models.Review))
+	} else {
+		h.HandleReviewModeration(update)
+	}
 }
