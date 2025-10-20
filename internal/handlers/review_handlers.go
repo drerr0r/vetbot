@@ -250,14 +250,14 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 		review = fullReview
 	}
 
+	// ВАЖНО: Уведомляем администраторов о новом/обновленном отзыве
+	h.notifyAdminsAboutNewReview(review)
+
 	// Очищаем состояние и данные
 	h.stateManager.ClearUserState(userID)
 	h.stateManager.ClearUserData(userID)
 
 	log.Printf("HandleReviewComment: review saved successfully for user %d, review ID: %d", userID, review.ID)
-
-	// Уведомляем администраторов о новом отзыве
-	h.notifyAdminsAboutNewReview(review)
 
 	// Отправляем подтверждение пользователю
 	msg := tgbotapi.NewMessage(chatID,
@@ -544,11 +544,15 @@ func (h *ReviewHandlers) HandleReviewModerationConfirm(update tgbotapi.Update, a
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
+// notifyAdminsAboutNewReview уведомляет администраторов о новом отзыве
 func (h *ReviewHandlers) notifyAdminsAboutNewReview(review *models.Review) {
+
 	if review == nil {
 		ErrorLog.Printf("notifyAdminsAboutNewReview: review is nil")
 		return
 	}
+
+	InfoLog.Printf("🔍 notifyAdminsAboutNewReview: review ID %d, status %s", review.ID, review.Status)
 
 	// ЗАГРУЖАЕМ ВЕТЕРИНАРА ЕСЛИ ОН НЕ ЗАГРУЖЕН
 	if review.Veterinarian == nil {
@@ -568,11 +572,12 @@ func (h *ReviewHandlers) notifyAdminsAboutNewReview(review *models.Review) {
 	// Реализация уведомления администраторов
 	for _, adminID := range h.adminIDs {
 		msg := tgbotapi.NewMessage(adminID,
-			fmt.Sprintf("⚡ *Новый отзыв на модерацию!*\n\nВрач: %s %s\nОценка: %d/5 ⭐\nОтзыв: %s",
+			fmt.Sprintf("⚡ *Новый отзыв на модерацию!*\n\nВрач: %s %s\nОценка: %d/5 ⭐\nОтзыв: %s\n\n🆔 ID отзыва: %d",
 				html.EscapeString(review.Veterinarian.FirstName),
 				html.EscapeString(review.Veterinarian.LastName),
 				review.Rating,
-				html.EscapeString(review.Comment)))
+				html.EscapeString(review.Comment),
+				review.ID))
 		msg.ParseMode = "Markdown"
 		h.bot.Send(msg)
 	}
@@ -858,18 +863,26 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
+	InfoLog.Printf("🔍 approveReview START: user %d, review ID %d", userID, review.ID)
+
 	// Получаем ID модератора из базы
 	moderator, err := h.db.GetUserByTelegramID(userID)
 	if err != nil {
+		ErrorLog.Printf("❌ approveReview: moderator not found: %v", err)
 		h.sendErrorMessage(chatID, "❌ Ошибка: модератор не найден")
 		return
 	}
 
+	InfoLog.Printf("🔍 approveReview: found moderator ID %d", moderator.ID)
+
 	err = h.db.UpdateReviewStatus(review.ID, "approved", moderator.ID)
 	if err != nil {
+		ErrorLog.Printf("❌ approveReview: error updating review status: %v", err)
 		h.sendErrorMessage(chatID, "❌ Ошибка при одобрении отзыва")
 		return
 	}
+
+	InfoLog.Printf("✅ approveReview: successfully approved review ID %d", review.ID)
 
 	// Очищаем ТОЛЬКО current_review, сохраняя pending_reviews
 	h.stateManager.ClearUserDataByKey(userID, "current_review")
@@ -880,8 +893,10 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 	// Возвращаем к списку отзывов БЕЗ перезагрузки
 	pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
 	if pendingReviewsInterface != nil {
+		InfoLog.Printf("🔍 approveReview: showing review list")
 		h.showReviewList(update, pendingReviewsInterface.([]*models.Review))
 	} else {
+		InfoLog.Printf("🔍 approveReview: calling HandleReviewModeration")
 		h.HandleReviewModeration(update)
 	}
 }
