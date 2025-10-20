@@ -195,13 +195,33 @@ func (r *ReviewRepository) UpdateReviewStatus(reviewID int, status string, moder
 	return err
 }
 
-// HasUserReviewForVet проверяет, есть ли у пользователя отзыв на врача
+// HasUserReviewForVet проверяет, есть ли у пользователя ОДОБРЕННЫЙ отзыв на врача
 func (r *ReviewRepository) HasUserReviewForVet(userID int, vetID int) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM reviews WHERE user_id = $1 AND veterinarian_id = $2)`
+	query := `SELECT EXISTS(SELECT 1 FROM reviews WHERE user_id = $1 AND veterinarian_id = $2 AND status = 'approved')`
 
 	var exists bool
 	err := r.db.QueryRow(query, userID, vetID).Scan(&exists)
 	return exists, err
+}
+
+// GetUserPendingReview возвращает ожидающий модерации отзыв пользователя на врача
+func (r *ReviewRepository) GetUserPendingReview(userID int, vetID int) (*models.Review, error) {
+	query := `SELECT id, rating, comment, created_at 
+              FROM reviews 
+              WHERE user_id = $1 AND veterinarian_id = $2 AND status = 'pending'`
+
+	var review models.Review
+	err := r.db.QueryRow(query, userID, vetID).Scan(
+		&review.ID, &review.Rating, &review.Comment, &review.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &review, nil
 }
 
 // GetReviewStats возвращает статистику отзывов по врачу

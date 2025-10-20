@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"fmt"
 	"html"
 	"log"
@@ -127,7 +128,7 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 	h.bot.Request(callbackConfig)
 }
 
-// В HandleReviewComment добавьте создание пользователя если его нет
+// HandleReviewComment - обновленная версия с поддержкой повторных отзывов
 func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment string) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
@@ -189,42 +190,57 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 		log.Printf("HandleReviewComment: found existing user with ID %d", user.ID)
 	}
 
-	// Проверяем, не оставлял ли пользователь уже отзыв этому врачу
-	hasReview, err := h.db.HasUserReviewForVet(user.ID, vetID)
+	// ИЗМЕНЕНИЕ: Проверяем, есть ли уже ожидающий модерации отзыв от этого пользователя
+	existingPendingReview, err := h.getUserPendingReview(user.ID, vetID)
 	if err != nil {
-		log.Printf("HandleReviewComment: error checking existing review: %v", err)
-		h.sendErrorMessage(chatID, "Ошибка проверки существующих отзывов")
+		log.Printf("HandleReviewComment: error checking pending review: %v", err)
+		h.sendErrorMessage(chatID, "❌ Ошибка при проверке отзывов")
 		h.stateManager.ClearUserState(userID)
 		return
 	}
 
-	if hasReview {
-		log.Printf("HandleReviewComment: user %d already has review for vet %d", user.ID, vetID)
-		h.sendErrorMessage(chatID, "❌ Вы уже оставляли отзыв этому врачу.")
-		h.stateManager.ClearUserState(userID)
-		return
+	var review *models.Review
+
+	if existingPendingReview != nil {
+		// ИЗМЕНЕНИЕ: Обновляем существующий ожидающий отзыв
+		log.Printf("HandleReviewComment: updating existing pending review ID %d", existingPendingReview.ID)
+
+		existingPendingReview.Rating = rating
+		existingPendingReview.Comment = strings.TrimSpace(comment)
+		existingPendingReview.CreatedAt = time.Now() // Обновляем дату
+
+		// Обновляем в базе
+		err = h.updateReview(existingPendingReview)
+		if err != nil {
+			log.Printf("HandleReviewComment: error updating review: %v", err)
+			h.sendErrorMessage(chatID, "❌ Ошибка при обновлении отзыва")
+			h.stateManager.ClearUserState(userID)
+			return
+		}
+
+		review = existingPendingReview
+	} else {
+		// ИЗМЕНЕНИЕ: Создаем новый отзыв (даже если есть старый одобренный)
+		review = &models.Review{
+			VeterinarianID: vetID,
+			UserID:         user.ID,
+			Rating:         rating,
+			Comment:        strings.TrimSpace(comment),
+			Status:         "pending", // На модерации
+			CreatedAt:      time.Now(),
+		}
+
+		// Сохраняем в базу
+		err = h.db.CreateReview(review)
+		if err != nil {
+			log.Printf("HandleReviewComment: error saving review: %v", err)
+			h.sendErrorMessage(chatID, "❌ Ошибка при сохранении отзыва")
+			h.stateManager.ClearUserState(userID)
+			return
+		}
 	}
 
-	// Создаем отзыв
-	review := &models.Review{
-		VeterinarianID: vetID,
-		UserID:         user.ID,
-		Rating:         rating,
-		Comment:        strings.TrimSpace(comment),
-		Status:         "pending", // На модерации
-		CreatedAt:      time.Now(),
-	}
-
-	// Сохраняем в базу
-	err = h.db.CreateReview(review)
-	if err != nil {
-		log.Printf("HandleReviewComment: error saving review: %v", err)
-		h.sendErrorMessage(chatID, "❌ Ошибка при сохранении отзыва")
-		h.stateManager.ClearUserState(userID)
-		return
-	}
-
-	// ЗАГРУЖАЕМ ПОЛНЫЙ ОТЗЫВ С ВЕТЕРИНАРОМ
+	// Загружаем полный отзыв с ветеринаром
 	fullReview, err := h.db.GetReviewByID(review.ID)
 	if err != nil {
 		log.Printf("HandleReviewComment: error loading full review: %v", err)
@@ -247,6 +263,35 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 
 	// Уведомляем администраторов о новом отзыве
 	h.notifyAdminsAboutNewReview(review)
+}
+
+// ДОБАВИТЕ эти вспомогательные методы:
+
+// getUserPendingReview возвращает ожидающий модерации отзыв пользователя на врача
+func (h *ReviewHandlers) getUserPendingReview(userID int, vetID int) (*models.Review, error) {
+	query := `SELECT id, rating, comment, created_at 
+			  FROM reviews 
+			  WHERE user_id = $1 AND veterinarian_id = $2 AND status = 'pending'`
+
+	var review models.Review
+	err := h.db.GetDB().QueryRow(query, userID, vetID).Scan(
+		&review.ID, &review.Rating, &review.Comment, &review.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &review, nil
+}
+
+// updateReview обновляет существующий отзыв
+func (h *ReviewHandlers) updateReview(review *models.Review) error {
+	query := `UPDATE reviews SET rating = $1, comment = $2, created_at = $3 WHERE id = $4`
+	_, err := h.db.GetDB().Exec(query, review.Rating, review.Comment, review.CreatedAt, review.ID)
+	return err
 }
 
 // HandleShowReviews показывает отзывы о враче
