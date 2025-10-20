@@ -45,46 +45,54 @@ func (r *ReviewRepository) CreateReview(review *models.Review) error {
 	return nil
 }
 
-// GetReviewByID возвращает отзыв по ID с полной информацией
 func (r *ReviewRepository) GetReviewByID(reviewID int) (*models.Review, error) {
+
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("review repository not initialized")
 	}
 
-	query := `
-		SELECT r.id, r.veterinarian_id, r.user_id, r.rating, r.comment, 
-		       r.status, r.created_at, r.moderated_at, r.moderated_by,
-		       v.id, v.first_name, v.last_name, v.phone,
-		       u.id, u.telegram_id, u.username, u.first_name, u.last_name,
-		       m.id, m.telegram_id, m.username, m.first_name, m.last_name
-		FROM reviews r
-		LEFT JOIN veterinarians v ON r.veterinarian_id = v.id
-		LEFT JOIN users u ON r.user_id = u.id
-		LEFT JOIN users m ON r.moderated_by = m.id
-		WHERE r.id = $1`
+	query := `SELECT r.id, r.veterinarian_id, r.user_id, r.rating, r.comment, 
+                     r.status, r.created_at, r.moderated_at, r.moderator_id,
+                     v.id, v.first_name, v.last_name, v.phone, v.email,
+                     u.id, u.telegram_id, u.username, u.first_name, u.last_name
+              FROM reviews r
+              LEFT JOIN veterinarians v ON r.veterinarian_id = v.id
+              LEFT JOIN users u ON r.user_id = u.id
+              WHERE r.id = $1`
 
 	var review models.Review
-	var vetID sql.NullInt64
-	var userID, moderatorID sql.NullInt64
+	var vet models.Veterinarian
+	var user models.User
+	var vetID, userID sql.NullInt64
 	var moderatedAt sql.NullTime
+	var moderatorID sql.NullInt64
 
 	err := r.db.QueryRow(query, reviewID).Scan(
-		&review.ID, &review.VeterinarianID, &userID, &review.Rating,
-		&review.Comment, &review.Status, &review.CreatedAt, &moderatedAt, &moderatorID,
-		&vetID, &review.Veterinarian.FirstName, &review.Veterinarian.LastName, &review.Veterinarian.Phone,
-		&review.User.ID, &review.User.TelegramID, &review.User.Username, &review.User.FirstName, &review.User.LastName,
-		&review.Moderator.ID, &review.Moderator.TelegramID, &review.Moderator.Username, &review.Moderator.FirstName, &review.Moderator.LastName,
+		&review.ID, &review.VeterinarianID, &review.UserID, &review.Rating,
+		&review.Comment, &review.Status, &review.CreatedAt, &moderatedAt,
+		&moderatorID, &vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &vet.Email,
+		&userID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName,
 	)
-
 	if err != nil {
 		return nil, err
 	}
 
+	// Заполняем nullable поля
 	if moderatedAt.Valid {
 		review.ModeratedAt = moderatedAt
 	}
 	if moderatorID.Valid {
-		review.ModeratedBy = sql.NullInt64{Int64: moderatorID.Int64, Valid: true}
+		review.ModeratorID = int(moderatorID.Int64)
+	}
+
+	// Заполняем связанные объекты
+	if vetID.Valid {
+		vet.ID = vetID
+		review.Veterinarian = &vet
+	}
+	if userID.Valid {
+		user.ID = int(userID.Int64)
+		review.User = &user
 	}
 
 	return &review, nil
@@ -177,7 +185,7 @@ func (r *ReviewRepository) UpdateReviewStatus(reviewID int, status string, moder
 	var err error
 
 	if moderatorID > 0 {
-		query = `UPDATE reviews SET status = $1, moderated_at = $2, moderated_by = $3 WHERE id = $4`
+		query = `UPDATE reviews SET status = $1, moderated_at = $2, moderator_id = $3 WHERE id = $4`
 		_, err = r.db.Exec(query, status, time.Now(), moderatorID, reviewID)
 	} else {
 		query = `UPDATE reviews SET status = $1, moderated_at = $2 WHERE id = $3`

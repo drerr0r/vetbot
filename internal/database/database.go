@@ -349,12 +349,12 @@ func (d *Database) GetAllVeterinarians() ([]*models.Veterinarian, error) {
 		var experienceYears sql.NullInt64
 		var vetID sql.NullInt64
 		var cityID2 sql.NullInt64
-		var cityName, cityRegion sql.NullString // ДОБАВИТЬ: для обработки NULL
+		var cityName, cityRegion sql.NullString
 
 		err := rows.Scan(
 			&vetID, &vet.FirstName, &vet.LastName, &patronymic, &vet.Phone, &email,
 			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt,
-			&cityID2, &cityName, &cityRegion, &cityCreatedAt, // ИСПРАВЛЕНО: используем NullString
+			&cityID2, &cityName, &cityRegion, &cityCreatedAt,
 		)
 		if err != nil {
 			log.Printf("Ошибка сканирования строки veterinarians: %v", err)
@@ -925,11 +925,6 @@ func (d *Database) SearchCitiesByRegion(region string) ([]*models.City, error) {
 func (d *Database) CreateReview(review *models.Review) error {
 	repo := NewReviewRepository(d.db)
 	return repo.CreateReview(review)
-}
-
-func (d *Database) GetReviewByID(reviewID int) (*models.Review, error) {
-	repo := NewReviewRepository(d.db)
-	return repo.GetReviewByID(reviewID)
 }
 
 func (d *Database) GetApprovedReviewsByVet(vetID int) ([]*models.Review, error) {

@@ -177,6 +177,7 @@ type Review struct {
 	CreatedAt      time.Time     `json:"created_at"`
 	ModeratedAt    sql.NullTime  `json:"moderated_at"`
 	ModeratedBy    sql.NullInt64 `json:"moderated_by"`
+	ModeratorID    int           `json:"moderator_id"`
 
 	// Для удобства - связанные данные
 	Veterinarian *Veterinarian `json:"veterinarian,omitempty"`
