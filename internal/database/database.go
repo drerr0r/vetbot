@@ -927,6 +927,11 @@ func (d *Database) CreateReview(review *models.Review) error {
 	return repo.CreateReview(review)
 }
 
+func (d *Database) GetReviewByID(reviewID int) (*models.Review, error) {
+	repo := NewReviewRepository(d.db)
+	return repo.GetReviewByID(reviewID)
+}
+
 func (d *Database) GetApprovedReviewsByVet(vetID int) ([]*models.Review, error) {
 	repo := NewReviewRepository(d.db)
 	return repo.GetApprovedReviewsByVet(vetID)

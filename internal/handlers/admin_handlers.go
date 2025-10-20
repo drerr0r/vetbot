@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/internal/imports"
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/drerr0r/vetbot/pkg/utils"
@@ -2958,7 +2957,7 @@ func (h *AdminHandlers) importVeterinarians(update tgbotapi.Update, file io.Read
 	h.bot.Send(msg)
 
 	// Создаем импортер
-	importer := imports.NewCSVImporter(h.db.(*database.Database))
+	importer := imports.NewCSVImporter(h.db)
 
 	// Выполняем импорт
 	result, err := importer.ImportVeterinarians(file, fileName, InfoLog, ErrorLog)

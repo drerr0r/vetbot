@@ -1,4 +1,3 @@
-// internal/imports/csv_importer.go
 package imports
 
 import (
@@ -11,16 +10,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/drerr0r/vetbot/internal/database"
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/xuri/excelize/v2"
 )
 
-type CSVImporter struct {
-	db *database.Database
+// DatabaseInterface интерфейс для работы с базой данных в импортере
+type DatabaseInterface interface {
+	GetDB() *sql.DB
+	GetAllCities() ([]*models.City, error)
+	GetAllSpecializations() ([]*models.Specialization, error)
+	GetAllClinics() ([]*models.Clinic, error)
+	CreateVeterinarian(vet *models.Veterinarian) error
+	AddVeterinarianSpecialization(vetID int, specID int) error
 }
 
-func NewCSVImporter(db *database.Database) *CSVImporter {
+type CSVImporter struct {
+	db DatabaseInterface
+}
+
+func NewCSVImporter(db DatabaseInterface) *CSVImporter {
 	return &CSVImporter{db: db}
 }
 
