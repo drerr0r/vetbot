@@ -190,10 +190,10 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 		log.Printf("HandleReviewComment: found existing user with ID %d", user.ID)
 	}
 
-	// ИЗМЕНЕНИЕ: Проверяем, есть ли уже ожидающий модерации отзыв от этого пользователя
-	existingPendingReview, err := h.getUserPendingReview(user.ID, vetID)
+	// ИЗМЕНЕНИЕ: Проверяем ЛЮБОЙ существующий отзыв (не только pending)
+	existingReview, err := h.getUserReviewForVet(user.ID, vetID)
 	if err != nil {
-		log.Printf("HandleReviewComment: error checking pending review: %v", err)
+		log.Printf("HandleReviewComment: error checking existing review: %v", err)
 		h.sendErrorMessage(chatID, "❌ Ошибка при проверке отзывов")
 		h.stateManager.ClearUserState(userID)
 		return
@@ -201,16 +201,17 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 
 	var review *models.Review
 
-	if existingPendingReview != nil {
-		// ИЗМЕНЕНИЕ: Обновляем существующий ожидающий отзыв
-		log.Printf("HandleReviewComment: updating existing pending review ID %d", existingPendingReview.ID)
+	if existingReview != nil {
+		// ИЗМЕНЕНИЕ: Обновляем существующий отзыв (ЛЮБОГО статуса)
+		log.Printf("HandleReviewComment: updating existing review ID %d (status: %s)", existingReview.ID, existingReview.Status)
 
-		existingPendingReview.Rating = rating
-		existingPendingReview.Comment = strings.TrimSpace(comment)
-		existingPendingReview.CreatedAt = time.Now() // Обновляем дату
+		existingReview.Rating = rating
+		existingReview.Comment = strings.TrimSpace(comment)
+		existingReview.CreatedAt = time.Now() // Обновляем дату
+		existingReview.Status = "pending"     // Сбрасываем статус на модерацию
 
 		// Обновляем в базе
-		err = h.updateReview(existingPendingReview)
+		err = h.updateReview(existingReview)
 		if err != nil {
 			log.Printf("HandleReviewComment: error updating review: %v", err)
 			h.sendErrorMessage(chatID, "❌ Ошибка при обновлении отзыва")
@@ -218,9 +219,9 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 			return
 		}
 
-		review = existingPendingReview
+		review = existingReview
 	} else {
-		// ИЗМЕНЕНИЕ: Создаем новый отзыв (даже если есть старый одобренный)
+		// Создаем новый отзыв только если нет существующего
 		review = &models.Review{
 			VeterinarianID: vetID,
 			UserID:         user.ID,
@@ -265,17 +266,15 @@ func (h *ReviewHandlers) HandleReviewComment(update tgbotapi.Update, comment str
 	h.notifyAdminsAboutNewReview(review)
 }
 
-// ДОБАВИТЕ эти вспомогательные методы:
-
-// getUserPendingReview возвращает ожидающий модерации отзыв пользователя на врача
-func (h *ReviewHandlers) getUserPendingReview(userID int, vetID int) (*models.Review, error) {
-	query := `SELECT id, rating, comment, created_at 
+// getUserReviewForVet возвращает ЛЮБОЙ отзыв пользователя на врача (любого статуса)
+func (h *ReviewHandlers) getUserReviewForVet(userID int, vetID int) (*models.Review, error) {
+	query := `SELECT id, rating, comment, status, created_at 
 			  FROM reviews 
-			  WHERE user_id = $1 AND veterinarian_id = $2 AND status = 'pending'`
+			  WHERE user_id = $1 AND veterinarian_id = $2`
 
 	var review models.Review
 	err := h.db.GetDB().QueryRow(query, userID, vetID).Scan(
-		&review.ID, &review.Rating, &review.Comment, &review.CreatedAt,
+		&review.ID, &review.Rating, &review.Comment, &review.Status, &review.CreatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -284,6 +283,8 @@ func (h *ReviewHandlers) getUserPendingReview(userID int, vetID int) (*models.Re
 		return nil, err
 	}
 
+	review.VeterinarianID = vetID
+	review.UserID = userID
 	return &review, nil
 }
 
