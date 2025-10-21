@@ -868,6 +868,11 @@ func (d *Database) GetVeterinarianWithDetails(id int) (*models.Veterinarian, err
 	if err == nil {
 		vet.Schedules = schedules
 	}
+	// Загружаем клиники врача
+	clinics, err := d.GetClinicsByVetID(models.GetVetIDAsIntOrZero(&vet))
+	if err == nil {
+		vet.Clinics = clinics
+	}
 	return &vet, nil
 }
 
@@ -1284,4 +1289,57 @@ func (d *Database) GetUserByTelegramID(telegramID int64) (*models.User, error) {
 	}
 
 	return &user, nil
+}
+
+// GetClinicsByVetID возвращает клиники, в которых работает врач
+func (d *Database) GetClinicsByVetID(vetID int) ([]*models.Clinic, error) {
+	query := `
+        SELECT c.id, c.name, c.address, c.phone, c.working_hours, 
+               c.is_active, c.city_id, c.district, c.metro_station, c.created_at
+        FROM clinics c
+        INNER JOIN vet_clinics vc ON c.id = vc.clinic_id
+        WHERE vc.vet_id = $1 AND c.is_active = true
+        ORDER BY c.name`
+
+	rows, err := d.db.Query(query, vetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var clinics []*models.Clinic
+	for rows.Next() {
+		var clinic models.Clinic
+		var cityID sql.NullInt64
+		var phone, workingHours sql.NullString
+
+		err := rows.Scan(&clinic.ID, &clinic.Name, &clinic.Address, &phone,
+			&workingHours, &clinic.IsActive, &cityID,
+			&clinic.District, &clinic.MetroStation, &clinic.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		clinic.Phone = phone
+		clinic.WorkingHours = workingHours
+		clinic.CityID = cityID
+		clinics = append(clinics, &clinic)
+	}
+
+	return clinics, nil
+}
+
+// AddVetToClinic добавляет врача в клинику
+func (d *Database) AddVetToClinic(vetID int, clinicID int) error {
+	query := `INSERT INTO vet_clinics (vet_id, clinic_id) VALUES ($1, $2) 
+              ON CONFLICT (vet_id, clinic_id) DO NOTHING`
+	_, err := d.db.Exec(query, vetID, clinicID)
+	return err
+}
+
+// RemoveVetFromClinic удаляет врача из клиники
+func (d *Database) RemoveVetFromClinic(vetID int, clinicID int) error {
+	query := `DELETE FROM vet_clinics WHERE vet_id = $1 AND clinic_id = $2`
+	_, err := d.db.Exec(query, vetID, clinicID)
+	return err
 }

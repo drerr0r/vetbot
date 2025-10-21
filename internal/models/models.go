@@ -42,6 +42,7 @@ type Veterinarian struct {
 	// Для удобства - связанные данные
 	City      *City       `json:"city,omitempty"`
 	Schedules []*Schedule `json:"schedules,omitempty"`
+	Clinics   []*Clinic   `json:"clinics,omitempty"`
 }
 
 // City представляет населенный пункт

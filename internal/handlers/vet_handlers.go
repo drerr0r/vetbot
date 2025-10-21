@@ -568,6 +568,15 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 		return
 	}
 
+	// Получаем информацию о клинике
+	clinic, err := h.db.GetClinicByID(clinicID)
+	if err != nil {
+		ErrorLog.Printf("Error getting clinic: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении информации о клинике")
+		h.bot.Send(msg)
+		return
+	}
+
 	// Получаем врачей клиники через расписание
 	criteria := &models.SearchCriteria{
 		ClinicID: clinicID,
@@ -582,28 +591,6 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 
 	InfoLog.Printf("Found %d veterinarians for clinic ID: %d", len(vets), clinicID)
 
-	// Получаем информацию о клинике
-	clinics, err := h.db.GetAllClinics()
-	if err != nil {
-		ErrorLog.Printf("Error getting clinics: %v", err)
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении информации о клинике")
-		h.bot.Send(msg)
-		return
-	}
-
-	var clinicName string
-	for _, c := range clinics {
-		if c.ID == clinicID {
-			clinicName = c.Name
-			break
-		}
-	}
-
-	// Если клиника не найдена, используем заглушку
-	if clinicName == "" {
-		clinicName = "Неизвестная клиника"
-	}
-
 	// Клавиатура с кнопками навигации
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -614,26 +601,280 @@ func (h *VetHandlers) HandleSearchByClinic(update tgbotapi.Update, clinicID int)
 
 	if len(vets) == 0 {
 		msg := tgbotapi.NewMessage(chatID,
-			fmt.Sprintf("🏥 *Врачи в клинике \"%s\" не найдены*\n\nПопробуйте выбрать другую клинику.", clinicName))
+			fmt.Sprintf("🏥 *Врачи в клинике \"%s\" не найдены*\n\nПопробуйте выбрать другую клинику.", clinic.Name))
 		msg.ParseMode = "Markdown"
 		msg.ReplyMarkup = keyboard
 		h.bot.Send(msg)
 		return
 	}
 
-	// Отправляем заголовок
+	// Сначала отправляем информацию о клинике с кнопкой отзыва
+	err = h.sendClinicInfoWithReviewButton(chatID, clinic, len(vets))
+	if err != nil {
+		ErrorLog.Printf("Error sending clinic info: %v", err)
+	}
+
+	// Затем отправляем компактный список врачей
 	headerMsg := tgbotapi.NewMessage(chatID,
-		fmt.Sprintf("🏥 *Врачи в клинике \"%s\":*\n\nНайдено врачей: %d\n\nВыберите врача для просмотра отзывов:", html.EscapeString(clinicName), len(vets)))
+		fmt.Sprintf("👨‍⚕️ *Врачи клиники \"%s\":*\n\nНайдено врачей: %d\n\n", html.EscapeString(clinic.Name), len(vets)))
 	headerMsg.ParseMode = "Markdown"
 	h.bot.Send(headerMsg)
 
-	// Отправляем каждого врача с детальной информацией и кнопками отзывов
+	// Отправляем каждого врача в компактном формате с кнопкой "Подробнее"
 	for i, vet := range vets {
-		err := h.sendVetWithClinicDetailsAndReviews(chatID, vet, i+1, clinicID)
+		err := h.sendCompactVetInfo(chatID, vet, i+1, clinicID)
 		if err != nil {
 			ErrorLog.Printf("Error sending vet info: %v", err)
 		}
 	}
+}
+
+// sendClinicInfoWithReviewButton отправляет информацию о клинике с кнопкой отзыва
+func (h *VetHandlers) sendClinicInfoWithReviewButton(chatID int64, clinic *models.Clinic, vetCount int) error {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("🏥 *%s*\n\n", html.EscapeString(clinic.Name)))
+	sb.WriteString(fmt.Sprintf("📍 *Адрес:* %s\n", html.EscapeString(clinic.Address)))
+
+	if clinic.Phone.Valid && clinic.Phone.String != "" {
+		sb.WriteString(fmt.Sprintf("📞 *Телефон:* %s\n", html.EscapeString(clinic.Phone.String)))
+	}
+
+	if clinic.WorkingHours.Valid && clinic.WorkingHours.String != "" {
+		sb.WriteString(fmt.Sprintf("🕐 *Часы работы:* %s\n", html.EscapeString(clinic.WorkingHours.String)))
+	}
+
+	if clinic.MetroStation.Valid && clinic.MetroStation.String != "" {
+		sb.WriteString(fmt.Sprintf("🚇 *Метро:* %s\n", html.EscapeString(clinic.MetroStation.String)))
+	}
+
+	if clinic.District.Valid && clinic.District.String != "" {
+		sb.WriteString(fmt.Sprintf("🏘️ *Район:* %s\n", html.EscapeString(clinic.District.String)))
+	}
+
+	sb.WriteString(fmt.Sprintf("👨‍⚕️ *Количество врачей:* %d\n", vetCount))
+
+	// Клавиатура с кнопкой отзыва о клинике
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⭐ Оставить отзыв о клинике", fmt.Sprintf("add_clinic_review_%d", clinic.ID)),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	_, err := h.bot.Send(msg)
+	return err
+}
+
+// sendCompactVetInfo отправляет компактную информацию о враче с кнопкой "Подробнее"
+func (h *VetHandlers) sendCompactVetInfo(chatID int64, vet *models.Veterinarian, index int, clinicID int) error {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", index, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
+	sb.WriteString(fmt.Sprintf("📞 `%s`", html.EscapeString(vet.Phone)))
+
+	// Специализации (первые 2)
+	specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
+	if err == nil && len(specs) > 0 {
+		sb.WriteString(" 🎯 ")
+		specNames := make([]string, 0)
+		for j, spec := range specs {
+			if j >= 2 { // Ограничиваем 2 специализациями
+				break
+			}
+			specNames = append(specNames, html.EscapeString(spec.Name))
+		}
+		sb.WriteString(strings.Join(specNames, ", "))
+		if len(specs) > 2 {
+			sb.WriteString(fmt.Sprintf(" (+%d)", len(specs)-2))
+		}
+	}
+
+	// Рейтинг (если есть)
+	stats, err := h.db.GetReviewStats(models.GetVetIDAsIntOrZero(vet))
+	if err == nil && stats.ApprovedReviews > 0 {
+		sb.WriteString(fmt.Sprintf(" ⭐ %.1f/5", stats.AverageRating))
+	}
+
+	// Используем clinicID для показа расписания в этой клинике
+	schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
+	if err == nil {
+		// Ищем ближайший рабочий день в этой клинике
+		for _, schedule := range schedules {
+			if schedule.ClinicID == clinicID && schedule.IsAvailable {
+				scheduleDayName := getDayName(schedule.DayOfWeek)
+				startTime := schedule.StartTime
+				endTime := schedule.EndTime
+				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+					sb.WriteString(fmt.Sprintf(" 🕐 %s %s-%s", scheduleDayName, startTime, endTime))
+					break // Показываем только первый найденный день
+				}
+			}
+		}
+	}
+
+	sb.WriteString("\n")
+
+	// Клавиатура с кнопками (используем clinicID в callback)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_clinic_%d_%d", models.GetVetIDAsIntOrZero(vet), clinicID)),
+			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", models.GetVetIDAsIntOrZero(vet))),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, sb.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+
+	_, err = h.bot.Send(msg)
+	return err
+}
+
+// HandleVetDetailsFromClinic показывает детальную информацию о враче в контексте клиники
+func (h *VetHandlers) HandleVetDetailsFromClinic(chatID int64, vetID int, clinicID int, messageID int) error {
+	InfoLog.Printf("HandleVetDetailsFromClinic called for vet ID: %d, clinic ID: %d", vetID, clinicID)
+
+	// Получаем полную информацию о враче
+	vet, err := h.db.GetVeterinarianWithDetails(vetID)
+	if err != nil {
+		ErrorLog.Printf("Error getting vet details: %v", err)
+		return fmt.Errorf("failed to get vet details: %v", err)
+	}
+
+	// Получаем информацию о клинике
+	clinic, err := h.db.GetClinicByID(clinicID)
+	if err != nil {
+		ErrorLog.Printf("Error getting clinic: %v", err)
+		clinic = &models.Clinic{Name: "Неизвестная клиника"}
+	}
+
+	// Формируем сообщение с полной информацией
+	message := h.formatVeterinarianDetailsForClinic(vet, clinic)
+
+	// Создаем клавиатуру с закрепленными кнопками
+	replyMarkup := h.createVetDetailsKeyboardForClinic(vetID, clinicID)
+
+	// Если есть предыдущее сообщение, редактируем его
+	if messageID != 0 {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, message)
+		editMsg.ParseMode = "Markdown"
+		editMsg.ReplyMarkup = &replyMarkup
+		_, err = h.bot.Send(editMsg)
+	} else {
+		msg := tgbotapi.NewMessage(chatID, message)
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = replyMarkup
+		_, err = h.bot.Send(msg)
+	}
+
+	return err
+}
+
+// formatVeterinarianDetailsForClinic форматирует детальную информацию о враче для конкретной клиники
+func (h *VetHandlers) formatVeterinarianDetailsForClinic(vet *models.Veterinarian, clinic *models.Clinic) string {
+	var message strings.Builder
+
+	message.WriteString("🐾 *Детальная информация о враче*\n\n")
+
+	// Основная информация
+	message.WriteString(fmt.Sprintf("👨‍⚕️ *%s %s*\n", vet.FirstName, vet.LastName))
+
+	// Получаем статистику отзывов
+	stats, err := h.db.GetReviewStats(models.GetVetIDAsIntOrZero(vet))
+	if err == nil {
+		if stats.ApprovedReviews > 0 {
+			message.WriteString(fmt.Sprintf("⭐ *Рейтинг:* %.1f/5 (%d отзывов)\n", stats.AverageRating, stats.ApprovedReviews))
+		} else {
+			message.WriteString("⭐ *Рейтинг:* пока нет отзывов\n")
+		}
+	}
+
+	if vet.Phone != "" {
+		message.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", vet.Phone))
+	}
+
+	if vet.Email.Valid && vet.Email.String != "" {
+		message.WriteString(fmt.Sprintf("📧 *Email:* %s\n", vet.Email.String))
+	}
+
+	if vet.ExperienceYears.Valid {
+		message.WriteString(fmt.Sprintf("⏳ *Опыт работы:* %d лет\n", vet.ExperienceYears.Int64))
+	}
+
+	if vet.Description.Valid && vet.Description.String != "" {
+		message.WriteString(fmt.Sprintf("📝 *Описание:* %s\n", vet.Description.String))
+	}
+
+	// Информация о городе
+	if vet.City != nil {
+		message.WriteString(fmt.Sprintf("🏙️ *Город:* %s", vet.City.Name))
+		if vet.City.Region != "" {
+			message.WriteString(fmt.Sprintf(" (%s)", vet.City.Region))
+		}
+		message.WriteString("\n")
+	}
+
+	// Специализации
+	if len(vet.Specializations) > 0 {
+		message.WriteString("🎯 *Специализации:* ")
+		specNames := make([]string, len(vet.Specializations))
+		for i, spec := range vet.Specializations {
+			specNames[i] = spec.Name
+		}
+		message.WriteString(strings.Join(specNames, ", "))
+		message.WriteString("\n")
+	}
+
+	// Расписание в конкретной клинике
+	message.WriteString(fmt.Sprintf("\n🏥 *Расписание в клинике \"%s\":*\n", clinic.Name))
+
+	hasSchedule := false
+	schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
+	if err == nil {
+		// Группируем по дням для этой клиники
+		daysMap := make(map[int][]string)
+		for _, schedule := range schedules {
+			if schedule.ClinicID == clinic.ID {
+				timeSlot := fmt.Sprintf("%s-%s", schedule.StartTime, schedule.EndTime)
+				daysMap[schedule.DayOfWeek] = append(daysMap[schedule.DayOfWeek], timeSlot)
+			}
+		}
+
+		if len(daysMap) > 0 {
+			hasSchedule = true
+			// Сортируем дни недели по порядку
+			for day := 1; day <= 7; day++ {
+				if timeSlots, exists := daysMap[day]; exists && len(timeSlots) > 0 {
+					dayName := getDayName(day)
+					message.WriteString(fmt.Sprintf("• %s: %s\n", dayName, strings.Join(timeSlots, ", ")))
+				}
+			}
+		}
+	}
+
+	if !hasSchedule {
+		message.WriteString("📅 Расписание не указано\n")
+	}
+
+	return message.String()
+}
+
+// createVetDetailsKeyboardForClinic создает клавиатуру для детального просмотра врача в контексте клиники
+func (h *VetHandlers) createVetDetailsKeyboardForClinic(vetID int, clinicID int) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", vetID)),
+			tgbotapi.NewInlineKeyboardButtonData("💬 Оставить отзыв", fmt.Sprintf("add_review_%d", vetID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 К списку врачей", fmt.Sprintf("search_clinic_%d", clinicID)),
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
+		),
+	)
 }
 
 // sendVetWithClinicDetailsAndReviews отправляет врача с детальной информацией и кнопками отзывов для клиник
@@ -740,11 +981,87 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 		h.handleReviewRatingCallback(update)
 	case data == "review_cancel":
 		h.handleReviewCancelCallback(update)
+	case strings.HasPrefix(data, "vet_details_clinic_"):
+		h.handleVetDetailsFromClinicCallback(callback)
+	case strings.HasPrefix(data, "add_clinic_review_"):
+		h.handleAddClinicReviewCallback(callback)
 	default:
 		// Неизвестный callback
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Неизвестная команда")
 		h.bot.Request(callbackConfig)
 	}
+}
+
+// handleAddClinicReviewCallback обрабатывает добавление отзыва о клинике
+func (h *VetHandlers) handleAddClinicReviewCallback(callback *tgbotapi.CallbackQuery) {
+	clinicIDStr := strings.TrimPrefix(callback.Data, "add_clinic_review_")
+	clinicID, err := strconv.Atoi(clinicIDStr)
+	if err != nil {
+		ErrorLog.Printf("Error parsing clinic ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "❌ Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	// Получаем информацию о клинике для отображения в сообщении
+	clinic, err := h.db.GetClinicByID(clinicID)
+	var clinicName string
+	if err != nil {
+		ErrorLog.Printf("Error getting clinic: %v", err)
+		clinicName = "этой клинике"
+	} else {
+		clinicName = clinic.Name
+	}
+
+	// Пока просто сообщение что функционал в разработке
+	msg := tgbotapi.NewMessage(callback.Message.Chat.ID,
+		fmt.Sprintf("⭐ *Отзывы о клинике \"%s\"*\n\nФункционал отзывов о клиниках находится в разработке и будет доступен в ближайшее время!", html.EscapeString(clinicName)))
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "📝 Функционал в разработке")
+	h.bot.Request(callbackConfig)
+}
+
+// handleVetDetailsFromClinicCallback обрабатывает callback для детального просмотра врача из клиники
+func (h *VetHandlers) handleVetDetailsFromClinicCallback(callback *tgbotapi.CallbackQuery) {
+	data := strings.TrimPrefix(callback.Data, "vet_details_clinic_")
+	parts := strings.Split(data, "_")
+	if len(parts) != 2 {
+		ErrorLog.Printf("Invalid vet_details_clinic callback data: %s", callback.Data)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	vetID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		ErrorLog.Printf("Error parsing vet ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	clinicID, err := strconv.Atoi(parts[1])
+	if err != nil {
+		ErrorLog.Printf("Error parsing clinic ID: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка обработки запроса")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	InfoLog.Printf("Showing details for vet ID: %d in clinic ID: %d", vetID, clinicID)
+
+	err = h.HandleVetDetailsFromClinic(callback.Message.Chat.ID, vetID, clinicID, callback.Message.MessageID)
+	if err != nil {
+		ErrorLog.Printf("Error showing vet details: %v", err)
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка при загрузке данных")
+		h.bot.Request(callbackConfig)
+		return
+	}
+
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "")
+	h.bot.Request(callbackConfig)
 }
 
 // handleVetDetailsCallback обрабатывает callback для детального просмотра врача
