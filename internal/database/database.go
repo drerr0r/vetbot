@@ -1404,7 +1404,7 @@ func (d *Database) GetAllActiveVeterinarians() ([]*models.Veterinarian, error) {
         ORDER BY v.first_name, v.last_name
     `
 
-	rows, err := d.db.Query(query) // Исправлено: d.db.Query вместо db.Query
+	rows, err := d.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("error querying active veterinarians: %v", err)
 	}
@@ -1417,12 +1417,17 @@ func (d *Database) GetAllActiveVeterinarians() ([]*models.Veterinarian, error) {
 		var email, description sql.NullString
 		var experienceYears sql.NullInt64
 		var cityID sql.NullInt64
-		var vetID sql.NullInt64 // Добавлено для ID врача
+		var vetID sql.NullInt64
+
+		// Используем sql.NullInt64 для city.id чтобы обработать NULL
+		var cityIDScan sql.NullInt64
+		var cityName, cityRegion sql.NullString
+		var cityCreatedAt sql.NullTime
 
 		err := rows.Scan(
 			&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
 			&experienceYears, &description, &cityID, &vet.IsActive, &vet.CreatedAt,
-			&city.ID, &city.Name, &city.Region, &city.CreatedAt,
+			&cityIDScan, &cityName, &cityRegion, &cityCreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error scanning veterinarian: %v", err)
@@ -1433,13 +1438,25 @@ func (d *Database) GetAllActiveVeterinarians() ([]*models.Veterinarian, error) {
 		vet.ExperienceYears = experienceYears
 		vet.Description = description
 		vet.CityID = cityID
+		vet.IsActive = true
 
-		if city.ID != 0 {
+		// Заполняем информацию о городе только если он есть
+		if cityIDScan.Valid {
+			city.ID = int(cityIDScan.Int64)
+			if cityName.Valid {
+				city.Name = cityName.String
+			}
+			if cityRegion.Valid {
+				city.Region = cityRegion.String
+			}
+			if cityCreatedAt.Valid {
+				city.CreatedAt = cityCreatedAt.Time
+			}
 			vet.City = &city
 		}
 
 		// Загружаем специализации для врача
-		vetIDInt := models.GetVetIDAsIntOrZero(&vet) // Исправлено: используем функцию для получения ID
+		vetIDInt := models.GetVetIDAsIntOrZero(&vet)
 		specs, err := d.GetSpecializationsByVetID(vetIDInt)
 		if err == nil {
 			vet.Specializations = specs
