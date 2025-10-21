@@ -1397,11 +1397,11 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 	// Отправляем заголовок
 	dayName := getDayName(day)
 	headerMsg := tgbotapi.NewMessage(callback.Message.Chat.ID,
-		fmt.Sprintf("🕐 *Врачи, работающие в %s:*\n\nНайдено врачей: %d\n\nВыберите врача для просмотра отзывов:", dayName, len(vets)))
+		fmt.Sprintf("🕐 *Врачи, работающие в %s:*\n\nНайдено врачей: %d\n\n", dayName, len(vets)))
 	headerMsg.ParseMode = "Markdown"
 	h.bot.Send(headerMsg)
 
-	// Отправляем каждого врача с детальной информацией и кнопками отзывов
+	// Отправляем каждого врача в компактном формате
 	for i, vet := range vets {
 		err := h.sendVetWithDayDetailsAndReviews(callback.Message.Chat.ID, vet, i+1, day)
 		if err != nil {
@@ -1417,63 +1417,62 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 func (h *VetHandlers) sendVetWithDayDetailsAndReviews(chatID int64, vet *models.Veterinarian, index int, day int) error {
 	var sb strings.Builder
 
+	// Компактный формат как в поиске по клиникам
 	sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", index, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
-	sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
+	sb.WriteString(fmt.Sprintf("📞 `%s`", html.EscapeString(vet.Phone)))
 
-	if vet.Email.Valid && vet.Email.String != "" {
-		sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
-	}
-
-	if vet.ExperienceYears.Valid {
-		sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
-	}
-
-	// Специализации врача
+	// Специализации (первые 2)
 	specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
 	if err == nil && len(specs) > 0 {
-		sb.WriteString("🎯 *Специализации:* ")
-		specNames := make([]string, len(specs))
+		sb.WriteString(" 🎯 ")
+		specNames := make([]string, 0)
 		for j, spec := range specs {
-			specNames[j] = html.EscapeString(spec.Name)
+			if j >= 2 { // Ограничиваем 2 специализациями
+				break
+			}
+			specNames = append(specNames, html.EscapeString(spec.Name))
 		}
 		sb.WriteString(strings.Join(specNames, ", "))
-		sb.WriteString("\n")
+		if len(specs) > 2 {
+			sb.WriteString(fmt.Sprintf(" (+%d)", len(specs)-2))
+		}
 	}
 
-	// Информация о городе
-	if vet.City != nil {
-		sb.WriteString(fmt.Sprintf("🏙️ *Город:* %s\n", vet.City.Name))
+	// Рейтинг (если есть)
+	stats, err := h.db.GetReviewStats(models.GetVetIDAsIntOrZero(vet))
+	if err == nil && stats.ApprovedReviews > 0 {
+		sb.WriteString(fmt.Sprintf(" ⭐ %.1f/5", stats.AverageRating))
 	}
 
 	// Расписание для выбранного дня
 	schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
 	if err == nil {
-		hasSchedule := false
+		// Ищем ближайший рабочий день
 		for _, schedule := range schedules {
 			if schedule.DayOfWeek == day || day == 0 {
 				scheduleDayName := getDayName(schedule.DayOfWeek)
 				startTime := schedule.StartTime
 				endTime := schedule.EndTime
-				// Проверяем, что время корректное
 				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
-					if !hasSchedule {
-						sb.WriteString("🕐 *Расписание:*\n")
-						hasSchedule = true
-					}
-					sb.WriteString(fmt.Sprintf("• %s: %s-%s", scheduleDayName, startTime, endTime))
+					sb.WriteString(fmt.Sprintf(" 🕐 %s %s-%s", scheduleDayName, startTime, endTime))
 					if schedule.Clinic != nil && schedule.Clinic.Name != "" {
 						sb.WriteString(fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name)))
 					}
-					sb.WriteString("\n")
+					break // Показываем только первый найденный день
 				}
 			}
 		}
 	}
 
-	// Создаем клавиатуру с кнопками отзывов
+	sb.WriteString("\n")
+
+	// Создаем клавиатуру с кнопками
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_%d", models.GetVetIDAsIntOrZero(vet))),
 			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", models.GetVetIDAsIntOrZero(vet))),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📝 Добавить отзыв", fmt.Sprintf("add_review_%d", models.GetVetIDAsIntOrZero(vet))),
 		),
 	)

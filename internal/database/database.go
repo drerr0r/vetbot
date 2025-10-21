@@ -1343,3 +1343,51 @@ func (d *Database) RemoveVetFromClinic(vetID int, clinicID int) error {
 	_, err := d.db.Exec(query, vetID, clinicID)
 	return err
 }
+
+// GetVetsByClinic возвращает врачей работающих в клинике
+func (d *Database) GetVetsByClinic(clinicID int) ([]*models.Veterinarian, error) {
+	query := `
+        SELECT DISTINCT v.id, v.first_name, v.last_name, v.phone, v.email, 
+               v.description, v.experience_years, v.is_active, v.city_id, v.created_at
+        FROM veterinarians v
+        INNER JOIN vet_clinics vc ON v.id = vc.vet_id
+        WHERE vc.clinic_id = $1 AND v.is_active = true
+        ORDER BY v.first_name, v.last_name`
+
+	rows, err := d.db.Query(query, clinicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var veterinarians []*models.Veterinarian
+	for rows.Next() {
+		var vet models.Veterinarian
+		var vetID sql.NullInt64
+		var email, description sql.NullString
+		var experienceYears sql.NullInt64
+		var cityID sql.NullInt64
+
+		err := rows.Scan(&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
+			&description, &experienceYears, &vet.IsActive, &cityID, &vet.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		vet.ID = vetID
+		vet.Email = email
+		vet.Description = description
+		vet.ExperienceYears = experienceYears
+		vet.CityID = cityID
+
+		// Загружаем специализации для каждого врача
+		specs, err := d.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(&vet))
+		if err == nil {
+			vet.Specializations = specs
+		}
+
+		veterinarians = append(veterinarians, &vet)
+	}
+
+	return veterinarians, nil
+}
