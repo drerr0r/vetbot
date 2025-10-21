@@ -1709,7 +1709,7 @@ func (h *AdminHandlers) HandleStats(update tgbotapi.Update) {
 	h.bot.Send(msg)
 }
 
-// closeAdmin закрывает админскую панель
+// closeAdmin закрывает админскую панель и возвращает пользовательское меню
 func (h *AdminHandlers) closeAdmin(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 
@@ -1717,9 +1717,57 @@ func (h *AdminHandlers) closeAdmin(update tgbotapi.Update) {
 	h.cleanTempData(userID)
 	delete(h.adminState, userID)
 
-	removeKeyboard := tgbotapi.NewRemoveKeyboard(true)
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Админская панель закрыта")
-	msg.ReplyMarkup = removeKeyboard
+	// Очищаем состояние в stateManager
+	h.stateManager.ClearUserState(userID)
+	h.stateManager.ClearUserData(userID)
+
+	// Создаем пользовательскую клавиатуру (как в VetHandlers)
+	persistentKeyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔍 Специализации"),
+			tgbotapi.NewKeyboardButton("🏥 Клиники"),
+			tgbotapi.NewKeyboardButton("🕐 По дням"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏠 Главное меню"),
+			tgbotapi.NewKeyboardButton("ℹ️ Помощь"),
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Админская панель закрыта. Возврат в главное меню.")
+	msg.ReplyMarkup = persistentKeyboard
+	h.bot.Send(msg)
+
+	// Нужно получить доступ к VetHandlers, но так как мы в AdminHandlers,
+	// лучше отправить сообщение с главным меню напрямую
+	h.showUserMainMenu(update.Message.Chat.ID)
+}
+
+// showUserMainMenu показывает главное меню пользователя
+func (h *AdminHandlers) showUserMainMenu(chatID int64) {
+	persistentKeyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔍 Специализации"),
+			tgbotapi.NewKeyboardButton("🏥 Клиники"),
+			tgbotapi.NewKeyboardButton("🕐 По дням"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏠 Главное меню"),
+			tgbotapi.NewKeyboardButton("ℹ️ Помощь"),
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID,
+		`🐾 Добро пожаловать в VetBot! 🐾
+
+Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:
+
+*Используйте кнопки ниже для поиска врачей:*`)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = persistentKeyboard
+
 	h.bot.Send(msg)
 }
 

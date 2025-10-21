@@ -244,7 +244,6 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 		h.vetHandlers.HandleStart(update)
 		return
 	}
-
 	// ВТОРОЕ: Если пользователь в состоянии админки, но ввел обычную команду - очищаем состояние
 	state := h.stateManager.GetUserState(userID)
 	if strings.HasPrefix(state, "review_") || strings.HasPrefix(state, "admin_") || strings.HasPrefix(state, "vet_") {
