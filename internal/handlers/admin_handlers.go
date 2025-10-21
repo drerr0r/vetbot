@@ -1713,35 +1713,24 @@ func (h *AdminHandlers) HandleStats(update tgbotapi.Update) {
 func (h *AdminHandlers) closeAdmin(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 
+	InfoLog.Printf("🔄 Closing admin panel for user %d", userID)
+
 	// Очищаем все временные данные пользователя
 	h.cleanTempData(userID)
+
+	// Очищаем админ-состояние
 	delete(h.adminState, userID)
 
 	// Очищаем состояние в stateManager
-	h.stateManager.ClearUserState(userID)
-	h.stateManager.ClearUserData(userID)
+	if h.stateManager != nil {
+		h.stateManager.ClearUserState(userID)
+		h.stateManager.ClearUserData(userID)
+	}
 
-	// Создаем пользовательскую клавиатуру (как в VetHandlers)
-	persistentKeyboard := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("🔍 Специализации"),
-			tgbotapi.NewKeyboardButton("🏥 Клиники"),
-			tgbotapi.NewKeyboardButton("🕐 По дням"),
-		),
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("🏠 Главное меню"),
-			tgbotapi.NewKeyboardButton("ℹ️ Помощь"),
-			tgbotapi.NewKeyboardButton("🔙 Назад"),
-		),
-	)
-
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Админская панель закрыта. Возврат в главное меню.")
-	msg.ReplyMarkup = persistentKeyboard
-	h.bot.Send(msg)
-
-	// Нужно получить доступ к VetHandlers, но так как мы в AdminHandlers,
-	// лучше отправить сообщение с главным меню напрямую
+	// Используем существующую функцию для показа главного меню
 	h.showUserMainMenu(update.Message.Chat.ID)
+
+	InfoLog.Printf("✅ Admin panel closed for user %d", userID)
 }
 
 // showUserMainMenu показывает главное меню пользователя
@@ -1768,7 +1757,12 @@ func (h *AdminHandlers) showUserMainMenu(chatID int64) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = persistentKeyboard
 
-	h.bot.Send(msg)
+	_, err := h.bot.Send(msg)
+	if err != nil {
+		ErrorLog.Printf("Error sending main menu: %v", err)
+	}
+
+	InfoLog.Printf("✅ User main menu shown for chat %d", chatID)
 }
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С БАЗОЙ ДАННЫХ ==========

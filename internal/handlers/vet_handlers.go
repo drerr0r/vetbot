@@ -769,7 +769,7 @@ func (h *VetHandlers) sendCompactVetInfo(chatID int64, vet *models.Veterinarian,
 	// Клавиатура с кнопками (используем clinicID в callback)
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_clinic_%d_%d", models.GetVetIDAsIntOrZero(vet), clinicID)),
+			tgbotapi.NewInlineKeyboardButtonData("📋 Подробнее", fmt.Sprintf("vet_details_%d", models.GetVetIDAsIntOrZero(vet))),
 			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", models.GetVetIDAsIntOrZero(vet))),
 		),
 	)

@@ -54,7 +54,6 @@ func NewMainHandler(bot BotAPI, db Database, config *utils.Config) *MainHandler 
 	}
 }
 
-// HandleUpdate обрабатывает входящее обновление от Telegram
 func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	InfoLog.Printf("Received update")
 
@@ -98,13 +97,17 @@ func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	isAdmin := h.isAdmin(update.Message.From.ID)
 	InfoLog.Printf("User %d is admin: %t", update.Message.From.ID, isAdmin)
 
-	// Если пользователь администратор и находится в админском режиме, передаем админским хендлерам
-	if isAdmin && h.isInAdminMode(update.Message.From.ID) {
-		InfoLog.Printf("Redirecting to admin handlers")
+	// ИСПРАВЛЕНИЕ: Администраторы видят главное меню, если явно не в админ-режиме
+	userState := h.stateManager.GetUserState(update.Message.From.ID)
+
+	// Если пользователь администратор И находится в явном админ-режиме
+	if isAdmin && h.isInExplicitAdminMode(userState) {
+		InfoLog.Printf("Redirecting to admin handlers (explicit admin mode)")
 		h.adminHandlers.HandleAdminMessage(update)
 		return
 	}
 
+	// Для всех остальных случаев (включая админов не в админ-режиме) - обычное меню
 	// Сначала проверяем команды поиска (/search_1, /search_2 и т.д.)
 	if strings.HasPrefix(update.Message.Text, "/search_") {
 		InfoLog.Printf("Is search command: %s", update.Message.Text)
@@ -122,6 +125,22 @@ func (h *MainHandler) HandleUpdate(update tgbotapi.Update) {
 	// Обычные текстовые сообщения
 	InfoLog.Printf("Is text message: %s", update.Message.Text)
 	h.handleTextMessage(update)
+}
+
+// Новая функция для проверки явного админ-режима
+func (h *MainHandler) isInExplicitAdminMode(userState string) bool {
+	// Админ-режим только если пользователь явно выбрал админ-функции
+	adminStates := []string{
+		"admin_menu", "vet_management", "city_management",
+		"import_menu", "review_moderation", "stats_menu",
+	}
+
+	for _, state := range adminStates {
+		if userState == state {
+			return true
+		}
+	}
+	return false
 }
 
 // handleCommand обрабатывает текстовые команды
@@ -206,10 +225,12 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
 	text := update.Message.Text
 
-	// НОВОЕ: Обработка команд навигации
+	// ПРИОРИТЕТ: Обработка команд навигации ДО проверки админ-режима
 	switch text {
 	case "🏠 Главное меню", "Главное меню", "Меню":
 		InfoLog.Printf("Main menu command detected for user %d", userID)
+		// Сбрасываем состояние админ-режима
+		h.stateManager.ClearUserState(userID)
 		h.vetHandlers.HandleStart(update)
 		return
 	case "ℹ️ Помощь", "Помощь", "Справка":
@@ -882,21 +903,10 @@ func (h *MainHandler) isAdmin(userID int64) bool {
 	return false
 }
 
-// isInAdminMode проверяет, находится ли пользователь в режиме администратора
+// Уберите старую функцию isInAdminMode или обновите ее:
 func (h *MainHandler) isInAdminMode(userID int64) bool {
-	// Защита от nil pointer
-	if h.adminHandlers == nil {
-		return false
-	}
-
-	// Проверяем права администратора
-	if !h.adminHandlers.IsAdmin(userID) {
-		return false
-	}
-
-	// Проверяем, что пользователь активен в режиме админа
-	state := h.adminHandlers.adminState[userID]
-	return state != "" && state != "inactive"
+	// Просто проверяем права администратора, не состояние
+	return h.isAdmin(userID)
 }
 
 // importCities и importClinics - временные заглушки
