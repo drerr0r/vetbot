@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"log"
+
 	"github.com/drerr0r/vetbot/internal/models"
 	"github.com/xuri/excelize/v2"
 )
@@ -19,9 +21,16 @@ func (tg *TemplateGenerator) GenerateTemplate(filepath string) error {
 
 	// Создаем основной лист с данными
 	sheetName := "Врачи"
-	index, _ := f.NewSheet(sheetName)
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		return err
+	}
 	f.SetActiveSheet(index)
-	f.DeleteSheet("Sheet1")
+
+	// Удаляем дефолтный лист
+	if err := f.DeleteSheet("Sheet1"); err != nil {
+		log.Printf("Warning: failed to delete default sheet: %v", err)
+	}
 
 	// Заголовки колонок
 	headers := []string{
@@ -40,7 +49,9 @@ func (tg *TemplateGenerator) GenerateTemplate(filepath string) error {
 	// Устанавливаем заголовки
 	for col, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(col+1, 1)
-		f.SetCellValue(sheetName, cell, header)
+		if err := f.SetCellValue(sheetName, cell, header); err != nil {
+			return err
+		}
 	}
 
 	// Получаем справочные данные
@@ -80,15 +91,21 @@ func (tg *TemplateGenerator) GenerateTemplate(filepath string) error {
 	for row, example := range examples {
 		for col, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(col+1, row+2)
-			f.SetCellValue(sheetName, cell, example[header])
+			if err := f.SetCellValue(sheetName, cell, example[header]); err != nil {
+				return err
+			}
 		}
 	}
 
 	// Создаем лист со справочниками
-	tg.createReferenceSheet(f, "Справочники", cities, specializations, clinics)
+	if err := tg.createReferenceSheet(f, "Справочники", cities, specializations, clinics); err != nil {
+		return err
+	}
 
 	// Создаем лист с инструкцией
-	tg.createInstructionSheet(f, "Инструкция")
+	if err := tg.createInstructionSheet(f, "Инструкция"); err != nil {
+		return err
+	}
 
 	// Настраиваем ширину колонок
 	tg.setColumnWidths(f, sheetName)
@@ -98,35 +115,54 @@ func (tg *TemplateGenerator) GenerateTemplate(filepath string) error {
 }
 
 // Исправляем сигнатуру метода для работы с указателями
-func (tg *TemplateGenerator) createReferenceSheet(f *excelize.File, sheetName string, cities []*models.City, specs []*models.Specialization, clinics []*models.Clinic) {
-	index, _ := f.NewSheet(sheetName)
+func (tg *TemplateGenerator) createReferenceSheet(f *excelize.File, sheetName string, cities []*models.City, specs []*models.Specialization, clinics []*models.Clinic) error {
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		return err
+	}
 
 	// Города
-	f.SetCellValue(sheetName, "A1", "Доступные города:")
+	if err := f.SetCellValue(sheetName, "A1", "Доступные города:"); err != nil {
+		return err
+	}
 	for i, city := range cities {
 		cell, _ := excelize.CoordinatesToCellName(1, i+2)
-		f.SetCellValue(sheetName, cell, city.Name)
+		if err := f.SetCellValue(sheetName, cell, city.Name); err != nil {
+			return err
+		}
 	}
 
 	// Специализации
-	f.SetCellValue(sheetName, "C1", "Доступные специализации:")
+	if err := f.SetCellValue(sheetName, "C1", "Доступные специализации:"); err != nil {
+		return err
+	}
 	for i, spec := range specs {
 		cell, _ := excelize.CoordinatesToCellName(3, i+2)
-		f.SetCellValue(sheetName, cell, spec.Name)
+		if err := f.SetCellValue(sheetName, cell, spec.Name); err != nil {
+			return err
+		}
 	}
 
 	// Клиники
-	f.SetCellValue(sheetName, "E1", "Доступные клиники:")
+	if err := f.SetCellValue(sheetName, "E1", "Доступные клиники:"); err != nil {
+		return err
+	}
 	for i, clinic := range clinics {
 		cell, _ := excelize.CoordinatesToCellName(5, i+2)
-		f.SetCellValue(sheetName, cell, clinic.Name)
+		if err := f.SetCellValue(sheetName, cell, clinic.Name); err != nil {
+			return err
+		}
 	}
 
 	f.SetActiveSheet(index)
+	return nil
 }
 
-func (tg *TemplateGenerator) createInstructionSheet(f *excelize.File, sheetName string) {
-	index, _ := f.NewSheet(sheetName)
+func (tg *TemplateGenerator) createInstructionSheet(f *excelize.File, sheetName string) error {
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		return err
+	}
 
 	instructions := []string{
 		"ИНСТРУКЦИЯ ПО ЗАПОЛНЕНИЮ",
@@ -151,10 +187,13 @@ func (tg *TemplateGenerator) createInstructionSheet(f *excelize.File, sheetName 
 
 	for i, instruction := range instructions {
 		cell, _ := excelize.CoordinatesToCellName(1, i+1)
-		f.SetCellValue(sheetName, cell, instruction)
+		if err := f.SetCellValue(sheetName, cell, instruction); err != nil {
+			return err
+		}
 	}
 
 	f.SetActiveSheet(index)
+	return nil
 }
 
 func (tg *TemplateGenerator) setColumnWidths(f *excelize.File, sheetName string) {
@@ -172,6 +211,8 @@ func (tg *TemplateGenerator) setColumnWidths(f *excelize.File, sheetName string)
 	}
 
 	for col, width := range widths {
-		f.SetColWidth(sheetName, col, col, width)
+		if err := f.SetColWidth(sheetName, col, col, width); err != nil {
+			log.Printf("Warning: failed to set column width for %s: %v", col, err)
+		}
 	}
 }

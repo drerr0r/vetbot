@@ -208,7 +208,11 @@ func (i *CSVImporter) addVeterinarianWithRelations(vet *models.Veterinarian, rec
 		ErrorLog.Printf("❌ Строка %d: ошибка начала транзакции: %v", rowNum, err)
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			ErrorLog.Printf("❌ Строка %d: ошибка отката транзакции: %v", rowNum, err)
+		}
+	}()
 
 	// Добавляем врача
 	query := `INSERT INTO veterinarians (first_name, last_name, phone, email, experience_years, description, city_id, is_active) 

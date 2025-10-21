@@ -40,11 +40,15 @@ func (h *ReviewHandlers) HandleReviewCancel(update tgbotapi.Update) {
 	h.stateManager.ClearUserData(userID)
 
 	msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "❌ Добавление отзыва отменено.")
-	h.bot.Send(msg)
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("Failed to send review cancel message: %v", err)
+	}
 
 	// Отвечаем на callback
 	callbackConfig := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
-	h.bot.Request(callbackConfig)
+	if _, err := h.bot.Request(callbackConfig); err != nil {
+		log.Printf("Failed to send callback response: %v", err)
+	}
 }
 
 // HandleAddReview начинает процесс добавления отзыва
@@ -125,7 +129,9 @@ func (h *ReviewHandlers) HandleReviewRating(update tgbotapi.Update, rating int) 
 
 	// Отвечаем на callback
 	callbackConfig := tgbotapi.NewCallback(callback.ID, fmt.Sprintf("✅ Выбрано %d звезд", rating))
-	h.bot.Request(callbackConfig)
+	if _, err := h.bot.Request(callbackConfig); err != nil {
+		log.Printf("Failed to send rating callback response: %v", err)
+	}
 }
 
 // HandleReviewComment - обновленная версия с поддержкой повторных отзывов
@@ -368,12 +374,16 @@ func (h *ReviewHandlers) HandleShowReviews(update tgbotapi.Update, vetID int) {
 	msg := tgbotapi.NewMessage(chatID, message.String())
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
-	h.bot.Send(msg)
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("Failed to send reviews message: %v", err)
+	}
 
 	// Отвечаем на callback
 	if update.CallbackQuery != nil {
 		callbackConfig := tgbotapi.NewCallback(update.CallbackQuery.ID, "")
-		h.bot.Request(callbackConfig)
+		if _, err := h.bot.Request(callbackConfig); err != nil {
+			log.Printf("Failed to send show reviews callback response: %v", err)
+		}
 	}
 }
 

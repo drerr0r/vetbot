@@ -77,7 +77,9 @@ func (h *AdminHandlers) HandleAdmin(update tgbotapi.Update) {
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
-	h.bot.Send(msg)
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("Failed to send admin panel message: %v", err)
+	}
 }
 
 func (h *AdminHandlers) HandleAdminMessage(update tgbotapi.Update) {
@@ -205,7 +207,9 @@ func (h *AdminHandlers) handleCancelProcess(update tgbotapi.Update, state string
 	}
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Операция отменена")
-	h.bot.Send(msg)
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("Failed to send cancel message: %v", err)
+	}
 }
 
 // handleBackButton обрабатывает кнопку "Назад"
@@ -282,7 +286,9 @@ func (h *AdminHandlers) handleMainMenu(update tgbotapi.Update, text string) {
 	default:
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 			"Используйте кнопки админской панели")
-		h.bot.Send(msg)
+		if _, err := h.bot.Send(msg); err != nil {
+			log.Printf("Failed to send default message: %v", err)
+		}
 	}
 }
 

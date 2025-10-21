@@ -449,7 +449,9 @@ func (h *MainHandler) downloadFile(fileID string, fileName string) (string, erro
 	// Создаем временную директорию если нет
 	tempDir := "temp"
 	if _, err := os.Stat(tempDir); os.IsNotExist(err) {
-		os.Mkdir(tempDir, 0755)
+		if err := os.Mkdir(tempDir, 0755); err != nil {
+			return "", fmt.Errorf("ошибка создания временной директории: %v", err)
+		}
 	}
 
 	// Скачиваем файл
@@ -554,7 +556,9 @@ func (h *MainHandler) parseVeterinariansCSV(filePath string) ([]models.Veterinar
 	var parseError error
 
 	for _, separator := range separators {
-		file.Seek(0, 0) // Сбрасываем позицию чтения
+		if _, err := file.Seek(0, 0); err != nil { // Сбрасываем позицию чтения
+			return nil, fmt.Errorf("ошибка сброса позиции файла: %v", err)
+		}
 		reader := csv.NewReader(file)
 		reader.Comma = separator
 		reader.FieldsPerRecord = -1 // Разрешаем разное количество полей
