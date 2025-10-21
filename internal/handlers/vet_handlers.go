@@ -48,28 +48,15 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 	// Очищаем историю навигации
 	h.stateManager.ClearHistory(update.Message.From.ID)
 
-	// Создаем главное меню с inline-кнопками
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔍 Поиск по специализациям", "main_specializations"),
-			tgbotapi.NewInlineKeyboardButtonData("🕐 Поиск по времени", "main_time"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🏥 Поиск по клиникам", "main_clinics"),
-			tgbotapi.NewInlineKeyboardButtonData("🏙️ Поиск по городу", "main_city"),
-		),
-	)
-
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		`🐾 Добро пожаловать в VetBot! 🐾
 
 Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:
 
-*Используйте кнопки ниже для быстрой навигации:*`)
-	msg.ReplyMarkup = keyboard
+*Используйте кнопки ниже для поиска врачей:*`)
 	msg.ParseMode = "Markdown"
 
-	// Добавляем постоянную клавиатуру
+	// Добавляем ТОЛЬКО постоянную клавиатуру (убрали inline-кнопки)
 	persistentKeyboard := h.createPersistentKeyboard()
 	msg.ReplyMarkup = persistentKeyboard
 
@@ -442,6 +429,11 @@ func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 // createPersistentKeyboard создает постоянную Reply-клавиатуру
 func (h *VetHandlers) createPersistentKeyboard() tgbotapi.ReplyKeyboardMarkup {
 	return tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🔍 Специализации"),
+			tgbotapi.NewKeyboardButton("🏥 Клиники"),
+			tgbotapi.NewKeyboardButton("🕐 По дням"),
+		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("🏠 Главное меню"),
 			tgbotapi.NewKeyboardButton("ℹ️ Помощь"),

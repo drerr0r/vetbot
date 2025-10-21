@@ -220,6 +220,18 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 		InfoLog.Printf("Back command detected for user %d", userID)
 		h.handleBackCommand(update)
 		return
+	case "🔍 Специализации", "Специализации":
+		InfoLog.Printf("Specializations command detected for user %d", userID)
+		h.vetHandlers.HandleSpecializations(update)
+		return
+	case "🏥 Клиники", "Клиники":
+		InfoLog.Printf("Clinics command detected for user %d", userID)
+		h.vetHandlers.HandleClinics(update)
+		return
+	case "🕐 По дням", "По дням", "Расписание":
+		InfoLog.Printf("Search by time command detected for user %d", userID)
+		h.vetHandlers.HandleSearch(update)
+		return
 	}
 
 	// ПЕРВОЕ: Обработка выхода из админки из ЛЮБОГО состояния
