@@ -205,7 +205,29 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 	text := update.Message.Text
+
+	// ПЕРВОЕ: Обработка выхода из админки из ЛЮБОГО состояния
+	if text == "❌ Выйти из админки" {
+		InfoLog.Printf("Admin exit command detected, clearing state for user %d", userID)
+		h.stateManager.ClearUserState(userID)
+		h.stateManager.ClearUserData(userID)
+
+		// Показываем главное меню
+		h.vetHandlers.HandleStart(update)
+		return
+	}
+
+	// ВТОРОЕ: Если пользователь в состоянии админки, но ввел обычную команду - очищаем состояние
 	state := h.stateManager.GetUserState(userID)
+	if strings.HasPrefix(state, "review_") || strings.HasPrefix(state, "admin_") || strings.HasPrefix(state, "vet_") {
+		if strings.HasPrefix(text, "/") && text != "/admin" {
+			InfoLog.Printf("Clearing admin state for command '%s'", text)
+			h.stateManager.ClearUserState(userID)
+			h.stateManager.ClearUserData(userID)
+			// Обновляем состояние после очистки
+			state = h.stateManager.GetUserState(userID)
+		}
+	}
 
 	InfoLog.Printf("handleTextMessage: user %d, chat %d, state '%s', text: '%s'",
 		userID, chatID, state, text)
@@ -242,7 +264,6 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 
 	case "review_moderation":
 		InfoLog.Printf("Processing review moderation for user %d", userID)
-		// ИЗМЕНИТЬ: Вместо прямого парсинга ID, перенаправляем в ReviewHandlers
 		h.reviewHandlers.HandleReviewModerationInput(update)
 		return
 
