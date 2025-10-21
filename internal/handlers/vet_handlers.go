@@ -5,6 +5,7 @@ import (
 	"html"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/drerr0r/vetbot/internal/models"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -1360,11 +1361,20 @@ func (h *VetHandlers) handleDaySelection(callback *tgbotapi.CallbackQuery) {
 
 	InfoLog.Printf("Searching for day: %d", day)
 
-	criteria := &models.SearchCriteria{
-		DayOfWeek: day,
+	var vets []*models.Veterinarian
+
+	if day == 0 {
+		// Для "Любой день" получаем всех активных врачей
+		InfoLog.Printf("Getting all vets for 'any day'")
+		vets, err = h.db.GetAllActiveVeterinarians()
+	} else {
+		// Для конкретного дня получаем врачей работающих в этот день
+		criteria := &models.SearchCriteria{
+			DayOfWeek: day,
+		}
+		vets, err = h.db.FindAvailableVets(criteria)
 	}
 
-	vets, err := h.db.FindAvailableVets(criteria)
 	if err != nil {
 		ErrorLog.Printf("Error finding vets: %v", err)
 		callbackConfig := tgbotapi.NewCallback(callback.ID, "Ошибка при поиске врачей")
@@ -1444,21 +1454,37 @@ func (h *VetHandlers) sendVetWithDayDetailsAndReviews(chatID int64, vet *models.
 		sb.WriteString(fmt.Sprintf(" ⭐ %.1f/5", stats.AverageRating))
 	}
 
-	// Расписание для выбранного дня
+	// Расписание
 	schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
-	if err == nil {
-		// Ищем ближайший рабочий день
-		for _, schedule := range schedules {
-			if schedule.DayOfWeek == day || day == 0 {
-				scheduleDayName := getDayName(schedule.DayOfWeek)
-				startTime := schedule.StartTime
-				endTime := schedule.EndTime
+	if err == nil && len(schedules) > 0 {
+		if day == 0 {
+			// Для "Любой день" показываем ближайший рабочий день
+			nearestSchedule := h.findNearestWorkingDay(schedules)
+			if nearestSchedule != nil {
+				scheduleDayName := getDayName(nearestSchedule.DayOfWeek)
+				startTime := nearestSchedule.StartTime
+				endTime := nearestSchedule.EndTime
 				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
 					sb.WriteString(fmt.Sprintf(" 🕐 %s %s-%s", scheduleDayName, startTime, endTime))
-					if schedule.Clinic != nil && schedule.Clinic.Name != "" {
-						sb.WriteString(fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name)))
+					if nearestSchedule.Clinic != nil && nearestSchedule.Clinic.Name != "" {
+						sb.WriteString(fmt.Sprintf(" (%s)", html.EscapeString(nearestSchedule.Clinic.Name)))
 					}
-					break // Показываем только первый найденный день
+				}
+			}
+		} else {
+			// Для конкретного дня показываем расписание в этот день
+			for _, schedule := range schedules {
+				if schedule.DayOfWeek == day {
+					scheduleDayName := getDayName(schedule.DayOfWeek)
+					startTime := schedule.StartTime
+					endTime := schedule.EndTime
+					if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+						sb.WriteString(fmt.Sprintf(" 🕐 %s %s-%s", scheduleDayName, startTime, endTime))
+						if schedule.Clinic != nil && schedule.Clinic.Name != "" {
+							sb.WriteString(fmt.Sprintf(" (%s)", html.EscapeString(schedule.Clinic.Name)))
+						}
+						break // Показываем только первый найденный день
+					}
 				}
 			}
 		}
@@ -1483,6 +1509,58 @@ func (h *VetHandlers) sendVetWithDayDetailsAndReviews(chatID int64, vet *models.
 
 	_, err = h.bot.Send(msg)
 	return err
+}
+
+// findNearestWorkingDay находит ближайший рабочий день врача
+func (h *VetHandlers) findNearestWorkingDay(schedules []*models.Schedule) *models.Schedule {
+	if len(schedules) == 0 {
+		return nil
+	}
+
+	// Получаем текущий день недели (1-7, где 1 - понедельник)
+	currentDay := int(time.Now().Weekday())
+	if currentDay == 0 { // Воскресенье в Go это 0, а у нас 7
+		currentDay = 7
+	}
+
+	// Сначала ищем сегодня или ближайший день в этой неделе
+	for day := currentDay; day <= 7; day++ {
+		for _, schedule := range schedules {
+			if schedule.DayOfWeek == day && schedule.IsAvailable {
+				startTime := schedule.StartTime
+				endTime := schedule.EndTime
+				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+					return schedule
+				}
+			}
+		}
+	}
+
+	// Если не нашли в оставшиеся дни недели, ищем с начала недели
+	for day := 1; day < currentDay; day++ {
+		for _, schedule := range schedules {
+			if schedule.DayOfWeek == day && schedule.IsAvailable {
+				startTime := schedule.StartTime
+				endTime := schedule.EndTime
+				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+					return schedule
+				}
+			}
+		}
+	}
+
+	// Если ничего не нашли, возвращаем первый доступный день
+	for _, schedule := range schedules {
+		if schedule.IsAvailable {
+			startTime := schedule.StartTime
+			endTime := schedule.EndTime
+			if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+				return schedule
+			}
+		}
+	}
+
+	return nil
 }
 
 // HandleTest для тестирования

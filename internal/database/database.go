@@ -1391,3 +1391,62 @@ func (d *Database) GetVetsByClinic(clinicID int) ([]*models.Veterinarian, error)
 
 	return veterinarians, nil
 }
+
+// GetAllActiveVeterinarians возвращает всех активных ветеринаров
+func (d *Database) GetAllActiveVeterinarians() ([]*models.Veterinarian, error) {
+	query := `
+        SELECT v.id, v.first_name, v.last_name, v.phone, v.email, 
+               v.experience_years, v.description, v.city_id, v.is_active, v.created_at,
+               c.id, c.name, c.region, c.created_at
+        FROM veterinarians v
+        LEFT JOIN cities c ON v.city_id = c.id
+        WHERE v.is_active = true
+        ORDER BY v.first_name, v.last_name
+    `
+
+	rows, err := d.db.Query(query) // Исправлено: d.db.Query вместо db.Query
+	if err != nil {
+		return nil, fmt.Errorf("error querying active veterinarians: %v", err)
+	}
+	defer rows.Close()
+
+	var vets []*models.Veterinarian
+	for rows.Next() {
+		var vet models.Veterinarian
+		var city models.City
+		var email, description sql.NullString
+		var experienceYears sql.NullInt64
+		var cityID sql.NullInt64
+		var vetID sql.NullInt64 // Добавлено для ID врача
+
+		err := rows.Scan(
+			&vetID, &vet.FirstName, &vet.LastName, &vet.Phone, &email,
+			&experienceYears, &description, &cityID, &vet.IsActive, &vet.CreatedAt,
+			&city.ID, &city.Name, &city.Region, &city.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning veterinarian: %v", err)
+		}
+
+		vet.ID = vetID
+		vet.Email = email
+		vet.ExperienceYears = experienceYears
+		vet.Description = description
+		vet.CityID = cityID
+
+		if city.ID != 0 {
+			vet.City = &city
+		}
+
+		// Загружаем специализации для врача
+		vetIDInt := models.GetVetIDAsIntOrZero(&vet) // Исправлено: используем функцию для получения ID
+		specs, err := d.GetSpecializationsByVetID(vetIDInt)
+		if err == nil {
+			vet.Specializations = specs
+		}
+
+		vets = append(vets, &vet)
+	}
+
+	return vets, nil
+}

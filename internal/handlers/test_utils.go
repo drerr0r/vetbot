@@ -1318,3 +1318,9 @@ func (m *MockDatabase) GetUserByID(userID int) (*models.User, error) {
 		TelegramID: 123456789,
 	}, nil
 }
+
+// GetAllActiveVeterinarians возвращает всех активных ветеринаров для мок-базы
+func (m *MockDatabase) GetAllActiveVeterinarians() ([]*models.Veterinarian, error) {
+	// Возвращаем пустой список или тестовые данные
+	return []*models.Veterinarian{}, nil
+}
