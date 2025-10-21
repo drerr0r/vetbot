@@ -616,6 +616,32 @@ func (h *ReviewHandlers) HandleReviewModerationInput(update tgbotapi.Update) {
 		InfoLog.Printf("🔍 ReviewModerationInput: current_review FOUND for user %d", userID)
 	}
 
+	// ОБРАБОТКА КОМАНДЫ /start ПЕРВОЙ
+	if text == "/start" {
+		h.stateManager.ClearUserState(userID)
+		h.stateManager.ClearUserData(userID)
+
+		// Показываем главное меню напрямую
+		h.bot.Send(tgbotapi.NewMessage(chatID, "🔄 Возвращаемся в главное меню..."))
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔍 Найти врача", "main_specializations"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🏥 Клиники", "main_clinics"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
+			),
+		)
+
+		msg := tgbotapi.NewMessage(chatID, "🐾 Добро пожаловать в VetBot! 🐾\n\nЯ ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:")
+		msg.ReplyMarkup = keyboard
+		h.bot.Send(msg)
+		return
+	}
+
 	// ПРОВЕРЯЕМ КОМАНДЫ АДМИНКИ ПЕРВЫМИ
 	adminCommands := map[string]func(){
 		"🔙 Назад в админку": func() { h.handleBackToAdmin(update) },
