@@ -865,6 +865,16 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 
 	InfoLog.Printf("🔍 approveReview START: user %d, review ID %d", userID, review.ID)
 
+	// ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА review
+	if review == nil {
+		ErrorLog.Printf("❌ approveReview: review is nil")
+		h.sendErrorMessage(chatID, "❌ Ошибка: отзыв не найден")
+		return
+	}
+
+	InfoLog.Printf("🔍 approveReview: processing review ID %d for vet %s %s",
+		review.ID, review.Veterinarian.FirstName, review.Veterinarian.LastName)
+
 	// Получаем ID модератора из базы
 	moderator, err := h.db.GetUserByTelegramID(userID)
 	if err != nil {
