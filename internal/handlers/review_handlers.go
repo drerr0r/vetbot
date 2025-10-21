@@ -308,8 +308,8 @@ func (h *ReviewHandlers) getUserReviewForVet(userID int, vetID int) (*models.Rev
 
 // updateReview обновляет существующий отзыв
 func (h *ReviewHandlers) updateReview(review *models.Review) error {
-	query := `UPDATE reviews SET rating = $1, comment = $2, created_at = $3 WHERE id = $4`
-	_, err := h.db.GetDB().Exec(query, review.Rating, review.Comment, review.CreatedAt, review.ID)
+	query := `UPDATE reviews SET rating = $1, comment = $2, created_at = $3, status = $4 WHERE id = $5`
+	_, err := h.db.GetDB().Exec(query, review.Rating, review.Comment, review.CreatedAt, review.Status, review.ID)
 	return err
 }
 
