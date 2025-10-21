@@ -894,17 +894,41 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 
 	InfoLog.Printf("✅ approveReview: successfully approved review ID %d", review.ID)
 
-	// Очищаем ТОЛЬКО current_review, сохраняя pending_reviews
+	// Очищаем ТОЛЬКО current_review
 	h.stateManager.ClearUserDataByKey(userID, "current_review")
+
+	// ОБНОВЛЯЕМ СПИСОК PENDING_REVIEWS - удаляем одобренный отзыв
+	pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
+	if pendingReviewsInterface != nil {
+		pendingReviews := pendingReviewsInterface.([]*models.Review)
+		// Создаем новый список без одобренного отзыва
+		var updatedPendingReviews []*models.Review
+		for _, r := range pendingReviews {
+			if r.ID != review.ID {
+				updatedPendingReviews = append(updatedPendingReviews, r)
+			}
+		}
+		// Сохраняем обновленный список
+		h.stateManager.SetUserData(userID, "pending_reviews", updatedPendingReviews)
+
+		InfoLog.Printf("🔍 approveReview: removed review %d from pending list, %d reviews remaining",
+			review.ID, len(updatedPendingReviews))
+	}
 
 	msg := tgbotapi.NewMessage(chatID, "✅ Отзыв успешно одобрен!")
 	h.bot.Send(msg)
 
 	// Возвращаем к списку отзывов БЕЗ перезагрузки
-	pendingReviewsInterface := h.stateManager.GetUserData(userID, "pending_reviews")
+	pendingReviewsInterface = h.stateManager.GetUserData(userID, "pending_reviews")
 	if pendingReviewsInterface != nil {
-		InfoLog.Printf("🔍 approveReview: showing review list")
-		h.showReviewList(update, pendingReviewsInterface.([]*models.Review))
+		remainingReviews := pendingReviewsInterface.([]*models.Review)
+		if len(remainingReviews) > 0 {
+			InfoLog.Printf("🔍 approveReview: showing updated review list with %d reviews", len(remainingReviews))
+			h.showReviewList(update, remainingReviews)
+		} else {
+			InfoLog.Printf("🔍 approveReview: no more pending reviews, returning to admin menu")
+			h.handleBackToAdmin(update)
+		}
 	} else {
 		InfoLog.Printf("🔍 approveReview: calling HandleReviewModeration")
 		h.HandleReviewModeration(update)
