@@ -206,6 +206,22 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
 	text := update.Message.Text
 
+	// НОВОЕ: Обработка команд навигации
+	switch text {
+	case "🏠 Главное меню", "Главное меню", "Меню":
+		InfoLog.Printf("Main menu command detected for user %d", userID)
+		h.vetHandlers.HandleStart(update)
+		return
+	case "ℹ️ Помощь", "Помощь", "Справка":
+		InfoLog.Printf("Help command detected for user %d", userID)
+		h.vetHandlers.HandleHelp(update)
+		return
+	case "🔙 Назад", "Назад":
+		InfoLog.Printf("Back command detected for user %d", userID)
+		h.handleBackCommand(update)
+		return
+	}
+
 	// ПЕРВОЕ: Обработка выхода из админки из ЛЮБОГО состояния
 	if text == "❌ Выйти из админки" {
 		InfoLog.Printf("Admin exit command detected, clearing state for user %d", userID)
@@ -277,6 +293,41 @@ func (h *MainHandler) handleTextMessage(update tgbotapi.Update) {
 	msg := tgbotapi.NewMessage(chatID,
 		"Я понимаю только команды. Используйте /help для списка доступных команд.")
 	h.bot.Send(msg)
+}
+
+// handleBackCommand обрабатывает команду "Назад"
+func (h *MainHandler) handleBackCommand(update tgbotapi.Update) {
+	userID := update.Message.From.ID
+	previousState, exists := h.stateManager.PopState(userID)
+
+	if !exists {
+		// Если истории нет, показываем главное меню
+		InfoLog.Printf("No navigation history for user %d, showing main menu", userID)
+		h.vetHandlers.HandleStart(update)
+		return
+	}
+
+	InfoLog.Printf("Navigating back for user %d to state: %s", userID, previousState)
+
+	// В зависимости от предыдущего состояния возвращаем пользователя
+	switch previousState {
+	case "main_specializations":
+		h.vetHandlers.HandleSpecializations(update)
+	case "main_time":
+		h.vetHandlers.HandleSearch(update)
+	case "main_clinics":
+		h.vetHandlers.HandleClinics(update)
+	case "main_city":
+		h.vetHandlers.HandleSearchByCity(update)
+	case "main_help":
+		h.vetHandlers.HandleHelp(update)
+	case "main_menu":
+		h.vetHandlers.HandleStart(update)
+	default:
+		// Если неизвестное состояние, показываем главное меню
+		InfoLog.Printf("Unknown previous state: %s, showing main menu", previousState)
+		h.vetHandlers.HandleStart(update)
+	}
 }
 
 // handleDocument обрабатывает загружаемые документы (CSV/Excel для импорта)

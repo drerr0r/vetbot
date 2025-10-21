@@ -889,7 +889,7 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
-	InfoLog.Printf("🔍 approveReview START: user %d, review ID %d", userID, review.ID)
+	InfoLog.Printf("🔍 approveReview START: user %d", userID)
 
 	// ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА review
 	if review == nil {
@@ -898,8 +898,16 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 		return
 	}
 
-	InfoLog.Printf("🔍 approveReview: processing review ID %d for vet %s %s",
-		review.ID, review.Veterinarian.FirstName, review.Veterinarian.LastName)
+	InfoLog.Printf("🔍 approveReview: processing review ID %d", review.ID)
+
+	// БЕЗОПАСНОЕ логирование информации о враче
+	var vetInfo string
+	if review.Veterinarian != nil {
+		vetInfo = fmt.Sprintf(" for vet %s %s", review.Veterinarian.FirstName, review.Veterinarian.LastName)
+	} else {
+		vetInfo = " (vet info not available)"
+	}
+	InfoLog.Printf("🔍 approveReview: processing review ID %d%s", review.ID, vetInfo)
 
 	// Получаем ID модератора из базы
 	moderator, err := h.db.GetUserByTelegramID(userID)
@@ -930,7 +938,7 @@ func (h *ReviewHandlers) approveReview(update tgbotapi.Update, review *models.Re
 		// Создаем новый список без одобренного отзыва
 		var updatedPendingReviews []*models.Review
 		for _, r := range pendingReviews {
-			if r.ID != review.ID {
+			if r != nil && r.ID != review.ID {
 				updatedPendingReviews = append(updatedPendingReviews, r)
 			}
 		}

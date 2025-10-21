@@ -6,16 +6,18 @@ import (
 
 // StateManager управляет состояниями пользователей
 type StateManager struct {
-	userStates map[int64]string
-	userData   map[int64]map[string]interface{}
-	mutex      sync.RWMutex
+	userStates  map[int64]string
+	userData    map[int64]map[string]interface{}
+	userHistory map[int64][]string
+	mutex       sync.RWMutex
 }
 
 // NewStateManager создает новый менеджер состояний
 func NewStateManager() *StateManager {
 	return &StateManager{
-		userStates: make(map[int64]string),
-		userData:   make(map[int64]map[string]interface{}),
+		userStates:  make(map[int64]string),
+		userData:    make(map[int64]map[string]interface{}),
+		userHistory: make(map[int64][]string),
 	}
 }
 
@@ -87,8 +89,6 @@ func (sm *StateManager) ClearUserData(userID int64) {
 	delete(sm.userData, userID)
 }
 
-// Добавьте эти методы в конец файла:
-
 // DebugUserState выводит отладочную информацию о состоянии пользователя
 func (sm *StateManager) DebugUserState(userID int64) {
 	sm.mutex.RLock()
@@ -145,4 +145,63 @@ func (sm *StateManager) PrintDebugInfo(userID int64) {
 	data := sm.userData[userID]
 
 	InfoLog.Printf("StateManager Debug - User: %d, State: %s, Data: %+v", userID, state, data)
+}
+
+// PushState добавляет состояние в историю
+func (sm *StateManager) PushState(userID int64, state string) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	if sm.userHistory[userID] == nil {
+		sm.userHistory[userID] = make([]string, 0)
+	}
+
+	// Добавляем текущее состояние в историю
+	sm.userHistory[userID] = append(sm.userHistory[userID], state)
+
+	// Ограничиваем историю последними 10 состояниями
+	if len(sm.userHistory[userID]) > 10 {
+		sm.userHistory[userID] = sm.userHistory[userID][1:]
+	}
+}
+
+// PopState возвращает предыдущее состояние и удаляет его из истории
+func (sm *StateManager) PopState(userID int64) (string, bool) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	// Убираем проверку на nil, так как len() для nil слайсов возвращает 0
+	if len(sm.userHistory[userID]) == 0 {
+		return "", false
+	}
+
+	// Берем последнее состояние
+	lastIndex := len(sm.userHistory[userID]) - 1
+	previousState := sm.userHistory[userID][lastIndex]
+
+	// Удаляем его из истории
+	sm.userHistory[userID] = sm.userHistory[userID][:lastIndex]
+
+	return previousState, true
+}
+
+// GetPreviousState возвращает предыдущее состояние без удаления
+func (sm *StateManager) GetPreviousState(userID int64) (string, bool) {
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
+
+	// Убираем проверку на nil, так как len() для nil слайсов возвращает 0
+	if len(sm.userHistory[userID]) == 0 {
+		return "", false
+	}
+
+	lastIndex := len(sm.userHistory[userID]) - 1
+	return sm.userHistory[userID][lastIndex], true
+}
+
+// ClearHistory очищает историю пользователя
+func (sm *StateManager) ClearHistory(userID int64) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	delete(sm.userHistory, userID)
 }

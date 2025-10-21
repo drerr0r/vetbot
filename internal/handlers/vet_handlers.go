@@ -45,6 +45,9 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 		ErrorLog.Printf("Error creating user: %v", err)
 	}
 
+	// Очищаем историю навигации
+	h.stateManager.ClearHistory(update.Message.From.ID)
+
 	// Создаем главное меню с inline-кнопками
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -55,18 +58,22 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 			tgbotapi.NewInlineKeyboardButtonData("🏥 Поиск по клиникам", "main_clinics"),
 			tgbotapi.NewInlineKeyboardButtonData("🏙️ Поиск по городу", "main_city"),
 		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Помощь", "main_help"),
-		),
 	)
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
 		`🐾 Добро пожаловать в VetBot! 🐾
 
-Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:`)
-	msg.ReplyMarkup = keyboard
+Я ваш помощник в поиске ветеринарных врачей. Выберите способ поиска:
 
-	InfoLog.Printf("Sending start message with inline keyboard")
+*Используйте кнопки ниже для быстрой навигации:*`)
+	msg.ReplyMarkup = keyboard
+	msg.ParseMode = "Markdown"
+
+	// Добавляем постоянную клавиатуру
+	persistentKeyboard := h.createPersistentKeyboard()
+	msg.ReplyMarkup = persistentKeyboard
+
+	InfoLog.Printf("Sending start message with persistent keyboard")
 	_, err = h.bot.Send(msg)
 	if err != nil {
 		ErrorLog.Printf("Error sending start message: %v", err)
@@ -78,6 +85,13 @@ func (h *VetHandlers) HandleStart(update tgbotapi.Update) {
 // HandleSpecializations показывает список специализаций с улучшенным интерфейсом
 func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
 	InfoLog.Printf("HandleSpecializations called")
+
+	// Сохраняем текущее состояние в историю
+	if update.Message != nil {
+		h.stateManager.PushState(update.Message.From.ID, "main_menu")
+	} else if update.CallbackQuery != nil {
+		h.stateManager.PushState(update.CallbackQuery.From.ID, "main_menu")
+	}
 
 	var chatID int64
 
@@ -152,6 +166,13 @@ func (h *VetHandlers) HandleSpecializations(update tgbotapi.Update) {
 func (h *VetHandlers) HandleSearch(update tgbotapi.Update) {
 	InfoLog.Printf("HandleSearch called")
 
+	// Сохраняем текущее состояние в историю
+	if update.Message != nil {
+		h.stateManager.PushState(update.Message.From.ID, "main_menu")
+	} else if update.CallbackQuery != nil {
+		h.stateManager.PushState(update.CallbackQuery.From.ID, "main_menu")
+	}
+
 	var chatID int64
 
 	// Определяем chatID в зависимости от типа update
@@ -202,6 +223,13 @@ func (h *VetHandlers) HandleSearch(update tgbotapi.Update) {
 // HandleClinics показывает меню клиник
 func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
 	InfoLog.Printf("HandleClinics called")
+
+	// Сохраняем текущее состояние в историю
+	if update.Message != nil {
+		h.stateManager.PushState(update.Message.From.ID, "main_menu")
+	} else if update.CallbackQuery != nil {
+		h.stateManager.PushState(update.CallbackQuery.From.ID, "main_menu")
+	}
 
 	var chatID int64
 
@@ -275,6 +303,13 @@ func (h *VetHandlers) HandleClinics(update tgbotapi.Update) {
 func (h *VetHandlers) HandleSearchByCity(update tgbotapi.Update) {
 	InfoLog.Printf("HandleSearchByCity called")
 
+	// Сохраняем текущее состояние в историю
+	if update.Message != nil {
+		h.stateManager.PushState(update.Message.From.ID, "main_menu")
+	} else if update.CallbackQuery != nil {
+		h.stateManager.PushState(update.CallbackQuery.From.ID, "main_menu")
+	}
+
 	var chatID int64
 
 	// Определяем chatID в зависимости от типа update
@@ -346,6 +381,13 @@ func (h *VetHandlers) HandleSearchByCity(update tgbotapi.Update) {
 func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 	InfoLog.Printf("HandleHelp called")
 
+	// Сохраняем текущее состояние в историю
+	if update.Message != nil {
+		h.stateManager.PushState(update.Message.From.ID, "main_menu")
+	} else if update.CallbackQuery != nil {
+		h.stateManager.PushState(update.CallbackQuery.From.ID, "main_menu")
+	}
+
 	var chatID int64
 
 	// Определяем chatID в зависимости от типа update
@@ -360,11 +402,11 @@ func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 		return
 	}
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
-		),
-	)
+	// keyboard := tgbotapi.NewInlineKeyboardMarkup(
+	// 	tgbotapi.NewInlineKeyboardRow(
+	// 		tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "main_menu"),
+	// 	),
+	// )
 
 	helpText := `🐾 *VetBot - Помощь* 🐾
 
@@ -386,13 +428,26 @@ func (h *VetHandlers) HandleHelp(update tgbotapi.Update) {
 
 	msg := tgbotapi.NewMessage(chatID, helpText)
 	msg.ParseMode = "Markdown"
-	msg.ReplyMarkup = keyboard
+	// НОВОЕ: Добавляем постоянную клавиатуру вместо inline-кнопок
+	persistentKeyboard := h.createPersistentKeyboard()
+	msg.ReplyMarkup = persistentKeyboard
 
 	InfoLog.Printf("Sending help message to chat %d", chatID)
 	_, err := h.bot.Send(msg)
 	if err != nil {
 		ErrorLog.Printf("Error sending help message: %v", err)
 	}
+}
+
+// createPersistentKeyboard создает постоянную Reply-клавиатуру
+func (h *VetHandlers) createPersistentKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	return tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🏠 Главное меню"),
+			tgbotapi.NewKeyboardButton("ℹ️ Помощь"),
+			tgbotapi.NewKeyboardButton("🔙 Назад"),
+		),
+	)
 }
 
 // HandleSearchBySpecialization ищет врачей по специализации с кнопками отзывов
@@ -877,68 +932,68 @@ func (h *VetHandlers) createVetDetailsKeyboardForClinic(vetID int, clinicID int)
 	)
 }
 
-// sendVetWithClinicDetailsAndReviews отправляет врача с детальной информацией и кнопками отзывов для клиник
-func (h *VetHandlers) sendVetWithClinicDetailsAndReviews(chatID int64, vet *models.Veterinarian, index int, clinicID int) error {
-	var sb strings.Builder
+// // sendVetWithClinicDetailsAndReviews отправляет врача с детальной информацией и кнопками отзывов для клиник
+// func (h *VetHandlers) sendVetWithClinicDetailsAndReviews(chatID int64, vet *models.Veterinarian, index int, clinicID int) error {
+// 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", index, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
-	sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
+// 	sb.WriteString(fmt.Sprintf("**%d. %s %s**\n", index, html.EscapeString(vet.FirstName), html.EscapeString(vet.LastName)))
+// 	sb.WriteString(fmt.Sprintf("📞 *Телефон:* `%s`\n", html.EscapeString(vet.Phone)))
 
-	if vet.Email.Valid && vet.Email.String != "" {
-		sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
-	}
+// 	if vet.Email.Valid && vet.Email.String != "" {
+// 		sb.WriteString(fmt.Sprintf("📧 *Email:* %s\n", html.EscapeString(vet.Email.String)))
+// 	}
 
-	if vet.ExperienceYears.Valid {
-		sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
-	}
+// 	if vet.ExperienceYears.Valid {
+// 		sb.WriteString(fmt.Sprintf("💼 *Опыт:* %d лет\n", vet.ExperienceYears.Int64))
+// 	}
 
-	// Специализации врача
-	specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
-	if err == nil && len(specs) > 0 {
-		sb.WriteString("🎯 *Специализации:* ")
-		specNames := make([]string, len(specs))
-		for j, spec := range specs {
-			specNames[j] = html.EscapeString(spec.Name)
-		}
-		sb.WriteString(strings.Join(specNames, ", "))
-		sb.WriteString("\n")
-	}
+// 	// Специализации врача
+// 	specs, err := h.db.GetSpecializationsByVetID(models.GetVetIDAsIntOrZero(vet))
+// 	if err == nil && len(specs) > 0 {
+// 		sb.WriteString("🎯 *Специализации:* ")
+// 		specNames := make([]string, len(specs))
+// 		for j, spec := range specs {
+// 			specNames[j] = html.EscapeString(spec.Name)
+// 		}
+// 		sb.WriteString(strings.Join(specNames, ", "))
+// 		sb.WriteString("\n")
+// 	}
 
-	// Расписание врача в этой клинике
-	schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
-	if err == nil {
-		hasSchedule := false
-		for _, schedule := range schedules {
-			if schedule.ClinicID == clinicID {
-				if !hasSchedule {
-					sb.WriteString("🕐 *Расписание в этой клинике:*\n")
-					hasSchedule = true
-				}
-				scheduleDayName := getDayName(schedule.DayOfWeek)
-				startTime := schedule.StartTime
-				endTime := schedule.EndTime
-				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
-					sb.WriteString(fmt.Sprintf("• %s: %s-%s\n", scheduleDayName, startTime, endTime))
-				}
-			}
-		}
-	}
+// 	// Расписание врача в этой клинике
+// 	schedules, err := h.db.GetSchedulesByVetID(models.GetVetIDAsIntOrZero(vet))
+// 	if err == nil {
+// 		hasSchedule := false
+// 		for _, schedule := range schedules {
+// 			if schedule.ClinicID == clinicID {
+// 				if !hasSchedule {
+// 					sb.WriteString("🕐 *Расписание в этой клинике:*\n")
+// 					hasSchedule = true
+// 				}
+// 				scheduleDayName := getDayName(schedule.DayOfWeek)
+// 				startTime := schedule.StartTime
+// 				endTime := schedule.EndTime
+// 				if startTime != "" && endTime != "" && startTime != "00:00" && endTime != "00:00" {
+// 					sb.WriteString(fmt.Sprintf("• %s: %s-%s\n", scheduleDayName, startTime, endTime))
+// 				}
+// 			}
+// 		}
+// 	}
 
-	// Создаем клавиатуру с кнопками отзывов
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", models.GetVetIDAsIntOrZero(vet))),
-			tgbotapi.NewInlineKeyboardButtonData("📝 Добавить отзыв", fmt.Sprintf("add_review_%d", models.GetVetIDAsIntOrZero(vet))),
-		),
-	)
+// 	// Создаем клавиатуру с кнопками отзывов
+// 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+// 		tgbotapi.NewInlineKeyboardRow(
+// 			tgbotapi.NewInlineKeyboardButtonData("⭐ Отзывы", fmt.Sprintf("show_reviews_%d", models.GetVetIDAsIntOrZero(vet))),
+// 			tgbotapi.NewInlineKeyboardButtonData("📝 Добавить отзыв", fmt.Sprintf("add_review_%d", models.GetVetIDAsIntOrZero(vet))),
+// 		),
+// 	)
 
-	msg := tgbotapi.NewMessage(chatID, sb.String())
-	msg.ParseMode = "Markdown"
-	msg.ReplyMarkup = keyboard
+// 	msg := tgbotapi.NewMessage(chatID, sb.String())
+// 	msg.ParseMode = "Markdown"
+// 	msg.ReplyMarkup = keyboard
 
-	_, err = h.bot.Send(msg)
-	return err
-}
+// 	_, err = h.bot.Send(msg)
+// 	return err
+// }
 
 // HandleCallback обрабатывает все inline callback запросы
 func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
@@ -952,24 +1007,38 @@ func (h *VetHandlers) HandleCallback(update tgbotapi.Update) {
 	// Обрабатываем разные типы callback данных
 	switch {
 	case data == "main_menu":
+		// Сохраняем текущее состояние перед переходом в главное меню
+		currentState := h.stateManager.GetUserState(callback.From.ID)
+		if currentState != "" {
+			h.stateManager.PushState(callback.From.ID, currentState)
+		}
 		h.showMainMenu(callback)
 	case data == "main_specializations":
+		h.stateManager.PushState(callback.From.ID, "main_menu")
 		h.HandleSpecializations(update)
 	case data == "main_time":
+		h.stateManager.PushState(callback.From.ID, "main_menu")
 		h.HandleSearch(update)
 	case data == "main_clinics":
+		h.stateManager.PushState(callback.From.ID, "main_menu")
 		h.HandleClinics(update)
 	case data == "main_city":
+		h.stateManager.PushState(callback.From.ID, "main_menu")
 		h.HandleSearchByCity(update)
 	case data == "main_help":
+		h.stateManager.PushState(callback.From.ID, "main_menu")
 		h.HandleHelp(update)
 	case strings.HasPrefix(data, "search_spec_"):
+		h.stateManager.PushState(callback.From.ID, "main_specializations")
 		h.handleSearchSpecCallback(callback)
 	case strings.HasPrefix(data, "search_day_"):
+		h.stateManager.PushState(callback.From.ID, "main_time")
 		h.handleDaySelection(callback)
 	case strings.HasPrefix(data, "search_clinic_"):
+		h.stateManager.PushState(callback.From.ID, "main_clinics")
 		h.handleSearchClinicCallback(callback)
 	case strings.HasPrefix(data, "search_city_"):
+		h.stateManager.PushState(callback.From.ID, "main_city")
 		h.handleSearchCityCallback(callback)
 	case strings.HasPrefix(data, "vet_details_"):
 		h.handleVetDetailsCallback(callback)
